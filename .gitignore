@@ -1,3 +1,6 @@
+*~
 .stack-work/
 idiomaticca.cabal
-*~
+regress/*/*/main.dats
+regress/*/*/main_dats.c
+regress/*/*/test_prog
