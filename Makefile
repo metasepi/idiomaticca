@@ -8,7 +8,7 @@ install:
 
 test:
 	$(foreach i,$(SUBDIRS),$(MAKE) -C $i $@ &&) true
-	@echo "*** Need to write Spec.hs"
+	stack test
 
 clean:
 	stack clean
