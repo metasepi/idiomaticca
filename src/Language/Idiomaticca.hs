@@ -5,26 +5,37 @@ module Language.Idiomaticca
 import Language.ATS as ATS
 import Language.C as C
 
--- Based on corrode/src/Language/Rust/Corrode/C.lhs#interpretStatement
-statementTrans :: C.CStat -> ATS.Expression AlexPosn
-statementTrans (C.CCompound [] [C.CBlockStmt statement] _) = statementTrans statement
-statementTrans (C.CReturn (Just (C.CConst (C.CIntConst ret _))) _) = ATS.IntLit $ fromInteger $ C.getCInteger ret
-statementTrans _ = undefined
+interpretExpr :: C.CExpr -> ATS.Expression AlexPosn
+interpretExpr (C.CConst const) = case const of
+  C.CIntConst int _ -> ATS.IntLit $ fromInteger $ C.getCInteger int
+  _ -> undefined
+interpretExpr _ = undefined
 
--- Based on corrode/src/Language/Rust/Corrode/C.lhs#perDecl
-extDeclTrans :: C.CExtDecl -> ATS.Declaration AlexPosn
-extDeclTrans (C.CFDefExt (C.CFunDef _ (C.CDeclr (Just funcIdent) _ _ _ _) _ statement _)) =
-  ATS.Impl Nothing (ATS.Implement
-                    undefined -- pos
-                    [] -- preUniversalsI
-                    [] -- implicits
-                    [] -- universalsI
-                    (ATS.Unqualified $ identToString funcIdent) -- nameI
-                    (Just []) -- iArgs
-                    (Right $ statementTrans statement)) -- _iExpression
-extDeclTrans _ = undefined
+interpretStatement :: C.CStat -> ATS.Expression AlexPosn
+interpretStatement (C.CCompound [] [C.CBlockStmt statement] _) =
+  interpretStatement statement
+interpretStatement (C.CReturn (Just expr) _) =
+  interpretExpr expr
+interpretStatement _ = undefined
 
--- Based on corrode/src/Language/Rust/Corrode/C.lhs#interpretTranslationUnit
+interpretFunction :: CFunDef -> ATS.Declaration AlexPosn
+interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
+  ATS.Impl Nothing -- implArgs
+           (ATS.Implement -- _impl
+             undefined -- pos
+             [] -- preUniversalsI
+             [] -- implicits
+             [] -- universalsI
+             (ATS.Unqualified $ identToString ident) -- nameI
+             (Just []) -- iArgs
+             (Right $ interpretStatement body)) -- _iExpression
+interpretFunction _ =
+  undefined
+
+perDecl :: C.CExtDecl -> ATS.Declaration AlexPosn
+perDecl (C.CFDefExt f) = interpretFunction f
+perDecl _ = undefined
+
 interpretTranslationUnit :: C.CTranslUnit -> ATS.ATS AlexPosn
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
-  ATS.ATS $ fmap extDeclTrans cDecls
+  ATS.ATS $ fmap perDecl cDecls
