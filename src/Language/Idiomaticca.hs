@@ -5,10 +5,21 @@ module Language.Idiomaticca
 import Language.ATS as ATS
 import Language.C as C
 
+binop :: C.CBinaryOp -> ATS.Expression AlexPosn -> ATS.Expression AlexPosn -> ATS.Expression AlexPosn
+binop op lhs rhs = case op of
+  C.CMulOp -> ATS.Binary ATS.Mult lhs rhs
+  C.CDivOp -> ATS.Binary ATS.Div lhs rhs
+  -- xxx C.CRmdOp ...
+  C.CAddOp -> ATS.Binary ATS.Add lhs rhs
+  C.CSubOp -> ATS.Binary ATS.Sub lhs rhs
+  _ -> undefined
+
 interpretExpr :: C.CExpr -> ATS.Expression AlexPosn
 interpretExpr (C.CConst const) = case const of
   C.CIntConst int _ -> ATS.IntLit $ fromInteger $ C.getCInteger int
   _ -> undefined
+interpretExpr (C.CBinary op lhs rhs _) =
+  binop op (interpretExpr lhs) (interpretExpr rhs)
 interpretExpr _ = undefined
 
 interpretStatement :: C.CStat -> ATS.Expression AlexPosn
@@ -38,4 +49,4 @@ perDecl _ = undefined
 
 interpretTranslationUnit :: C.CTranslUnit -> ATS.ATS AlexPosn
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
-  ATS.ATS $ fmap perDecl cDecls
+  ATS.ATS $ ATS.Include "\"share/atspre_staload.hats\"" : fmap perDecl cDecls
