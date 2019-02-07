@@ -6,7 +6,7 @@ all:
 install:
 	stack install
 
-test:
+test: all
 	$(foreach i,$(SUBDIRS),$(MAKE) -C $i $@ &&) true
 	stack test
 
