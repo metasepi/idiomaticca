@@ -1,4 +1,4 @@
-# idiomaticca - translate IDIOMATIC C code into readable ATS
+# Idiomaticca - translate IDIOMATIC C code into readable ATS
 
 ## What's this?
 
