@@ -6,7 +6,11 @@ all:
 install:
 	stack install
 
+doc:
+	stack haddock --open
+
 test: all
+	make -C regress clean
 	$(foreach i,$(SUBDIRS),$(MAKE) -C $i $@ &&) true
 	stack test
 

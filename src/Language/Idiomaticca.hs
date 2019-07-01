@@ -1,3 +1,4 @@
+-- | Library to translate IDIOMATIC C into readable ATS.
 module Language.Idiomaticca
     ( interpretTranslationUnit
     ) where
@@ -47,6 +48,7 @@ perDecl :: C.CExtDecl -> A.Declaration A.AlexPosn
 perDecl (C.CFDefExt f) = interpretFunction f
 perDecl _ = undefined
 
+-- | convert C tranlsation unit to ATS declaration.
 interpretTranslationUnit :: C.CTranslUnit -> A.ATS A.AlexPosn
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
   A.ATS $ A.Include "\"share/atspre_staload.hats\"" : fmap perDecl cDecls
