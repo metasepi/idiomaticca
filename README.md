@@ -10,9 +10,11 @@ This program is a translator from C code, which is written by idiomatic manner, 
 
 ## What's IDIOMATIC C code?
 
-It means the C code written by idiomatic manner such as following:
+It means the C code written by idiomatic manner.
+Following will be supported.
 
-* xxx TBD: show list of translatable example
+* [NetBSD](https://www.netbsd.org/) kernel
+* [MISRA C](https://www.misra.org.uk/)
 
 ## Requirements
 
