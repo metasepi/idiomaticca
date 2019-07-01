@@ -48,7 +48,29 @@ perDecl :: C.CExtDecl -> A.Declaration A.AlexPosn
 perDecl (C.CFDefExt f) = interpretFunction f
 perDecl _ = undefined
 
+copyleftComment =
+  ["(*"
+  ," * Copyright (c) 2019 YOUR NAME"
+  ," * All rights reserved."
+  ," *"
+  ," * This program is free software: you can redistribute it and/or modify"
+  ," * it under the terms of the GNU Affero General Public License as"
+  ," * published by the Free Software Foundation, either version 3 of the"
+  ," * License, or (at your option) any later version."
+  ," *"
+  ," * This program is distributed in the hope that it will be useful,"
+  ," * but WITHOUT ANY WARRANTY; without even the implied warranty of"
+  ," * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the"
+  ," * GNU Affero General Public License for more details."
+  ," *"
+  ," * You should have received a copy of the GNU Affero General Public"
+  ," * License along with this program."
+  ," * If not, see <http://www.gnu.org/licenses/>."
+  ," *)"
+  ,""]
+
 -- | convert C tranlsation unit to ATS declarations.
 interpretTranslationUnit :: C.CTranslUnit -> A.ATS A.AlexPosn
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
-  A.ATS $ A.Include "\"share/atspre_staload.hats\"" : fmap perDecl cDecls
+  A.ATS $ fmap A.Comment copyleftComment ++
+    A.Include "\"share/atspre_staload.hats\"" : fmap perDecl cDecls
