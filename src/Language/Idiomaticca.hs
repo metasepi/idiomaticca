@@ -48,7 +48,7 @@ perDecl :: C.CExtDecl -> A.Declaration A.AlexPosn
 perDecl (C.CFDefExt f) = interpretFunction f
 perDecl _ = undefined
 
--- | convert C tranlsation unit to ATS declaration.
+-- | convert C tranlsation unit to ATS declarations.
 interpretTranslationUnit :: C.CTranslUnit -> A.ATS A.AlexPosn
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
   A.ATS $ A.Include "\"share/atspre_staload.hats\"" : fmap perDecl cDecls
