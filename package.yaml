@@ -19,6 +19,7 @@ dependencies:
 - filepath
 - language-ats
 - language-c
+- optparse-applicative
 
 library:
   source-dirs: src
