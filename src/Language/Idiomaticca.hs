@@ -6,45 +6,49 @@ module Language.Idiomaticca
 import qualified Language.ATS as A
 import qualified Language.C as C
 
-dummyPos :: A.AlexPosn
+type Pos = A.AlexPosn
+
+dummyPos :: Pos
 dummyPos = A.AlexPn 0 0 0
 
-binop :: C.CBinaryOp -> A.Expression A.AlexPosn -> A.Expression A.AlexPosn -> A.Expression A.AlexPosn
+binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> A.Expression Pos
 binop op lhs rhs = case op of
   C.CMulOp -> A.Binary A.Mult lhs rhs
   C.CDivOp -> A.Binary A.Div lhs rhs
-  -- xxx C.CRmdOp ...
   C.CAddOp -> A.Binary A.Add lhs rhs
   C.CSubOp -> A.Binary A.Sub lhs rhs
-  _ -> undefined
 
-interpretExpr :: C.CExpr -> A.Expression A.AlexPosn
+singleSpec :: [C.CTypeSpec] -> A.Type Pos
+singleSpec [C.CIntType _] = A.Named $ A.Unqualified "int"
+
+interpretExpr :: C.CExpr -> A.Expression Pos
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> A.IntLit $ fromInteger $ C.getCInteger int
-  _ -> undefined
 interpretExpr (C.CBinary op lhs rhs _) =
   binop op (interpretExpr lhs) (interpretExpr rhs)
-interpretExpr _ = undefined
 
-interpretBlockItemDecl :: C.CBlockItem -> A.Declaration A.AlexPosn
-interpretBlockItemDecl (C.CBlockDecl decl) = undefined
+interpretDeclarations :: C.CDecl -> A.Declaration Pos
+interpretDeclarations (C.CDecl specs _ _) =
+  -- xxx singleSpec specs
+  undefined
+
+interpretBlockItemDecl :: C.CBlockItem -> A.Declaration Pos
+interpretBlockItemDecl (C.CBlockDecl decl) =
+  interpretDeclarations decl
 interpretBlockItemDecl (C.CBlockStmt statement) = undefined
-interpretBlockItemDecl _ = undefined
 
-interpretBlockItemExp :: C.CBlockItem -> A.Expression A.AlexPosn
+interpretBlockItemExp :: C.CBlockItem -> A.Expression Pos
 interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatement statement
-interpretBlockItemExp _ = undefined
 
-interpretStatement :: C.CStat -> A.Expression A.AlexPosn
+interpretStatement :: C.CStat -> A.Expression Pos
 interpretStatement (C.CCompound [] items _) =
   A.Let dummyPos (A.ATS $ fmap interpretBlockItemDecl $ init items)
     (Just $ interpretBlockItemExp $ last items)
 interpretStatement (C.CReturn (Just expr) _) =
   interpretExpr expr
-interpretStatement _ = undefined
 
-interpretFunction :: C.CFunDef -> A.Declaration A.AlexPosn
+interpretFunction :: C.CFunDef -> A.Declaration Pos
 interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
   A.Impl Nothing -- implArgs
            (A.Implement -- _impl
@@ -55,12 +59,9 @@ interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
              (A.Unqualified $ C.identToString ident) -- nameI
              (Just []) -- iArgs
              (Right $ interpretStatement body)) -- _iExpression
-interpretFunction _ =
-  undefined
 
-perDecl :: C.CExtDecl -> A.Declaration A.AlexPosn
+perDecl :: C.CExtDecl -> A.Declaration Pos
 perDecl (C.CFDefExt f) = interpretFunction f
-perDecl _ = undefined
 
 copyleftComment :: [String]
 copyleftComment =
@@ -85,7 +86,7 @@ copyleftComment =
   ,""]
 
 -- | convert C tranlsation unit to ATS declarations.
-interpretTranslationUnit :: C.CTranslUnit -> A.ATS A.AlexPosn
+interpretTranslationUnit :: C.CTranslUnit -> A.ATS Pos
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
   A.ATS $ fmap A.Comment copyleftComment ++
     A.Include "\"share/atspre_staload.hats\"" : fmap perDecl cDecls
