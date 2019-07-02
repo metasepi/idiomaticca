@@ -16,7 +16,7 @@ binop op lhs rhs = case op of
   _ -> undefined
 
 interpretExpr :: C.CExpr -> A.Expression A.AlexPosn
-interpretExpr (C.CConst const) = case const of
+interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> A.IntLit $ fromInteger $ C.getCInteger int
   _ -> undefined
 interpretExpr (C.CBinary op lhs rhs _) =
@@ -48,6 +48,7 @@ perDecl :: C.CExtDecl -> A.Declaration A.AlexPosn
 perDecl (C.CFDefExt f) = interpretFunction f
 perDecl _ = undefined
 
+copyleftComment :: [String]
 copyleftComment =
   ["(*"
   ," * Copyright (c) 2019 YOUR NAME"
