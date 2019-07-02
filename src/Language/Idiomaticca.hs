@@ -6,6 +6,9 @@ module Language.Idiomaticca
 import qualified Language.ATS as A
 import qualified Language.C as C
 
+dummyPos :: A.AlexPosn
+dummyPos = A.AlexPn 0 0 0
+
 binop :: C.CBinaryOp -> A.Expression A.AlexPosn -> A.Expression A.AlexPosn -> A.Expression A.AlexPosn
 binop op lhs rhs = case op of
   C.CMulOp -> A.Binary A.Mult lhs rhs
@@ -23,9 +26,20 @@ interpretExpr (C.CBinary op lhs rhs _) =
   binop op (interpretExpr lhs) (interpretExpr rhs)
 interpretExpr _ = undefined
 
-interpretStatement :: C.CStat -> A.Expression A.AlexPosn
-interpretStatement (C.CCompound [] [C.CBlockStmt statement] _) =
+interpretBlockItemDecl :: C.CBlockItem -> A.Declaration A.AlexPosn
+interpretBlockItemDecl (C.CBlockDecl decl) = undefined
+interpretBlockItemDecl (C.CBlockStmt statement) = undefined
+interpretBlockItemDecl _ = undefined
+
+interpretBlockItemExp :: C.CBlockItem -> A.Expression A.AlexPosn
+interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatement statement
+interpretBlockItemExp _ = undefined
+
+interpretStatement :: C.CStat -> A.Expression A.AlexPosn
+interpretStatement (C.CCompound [] items _) =
+  A.Let dummyPos (A.ATS $ fmap interpretBlockItemDecl $ init items)
+    (Just $ interpretBlockItemExp $ last items)
 interpretStatement (C.CReturn (Just expr) _) =
   interpretExpr expr
 interpretStatement _ = undefined
@@ -34,7 +48,7 @@ interpretFunction :: C.CFunDef -> A.Declaration A.AlexPosn
 interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
   A.Impl Nothing -- implArgs
            (A.Implement -- _impl
-             undefined -- pos
+             dummyPos -- pos
              [] -- preUniversalsI
              [] -- implicits
              [] -- universalsI
