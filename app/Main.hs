@@ -1,8 +1,5 @@
 module Main where
 
-import Control.Monad
-import System.FilePath
-import System.Environment
 import Data.Version hiding (Version (..))
 import Paths_idiomaticca
 import Options.Applicative
