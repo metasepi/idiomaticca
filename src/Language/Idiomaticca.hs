@@ -36,16 +36,21 @@ interpretExpr (C.CVar i _) =
 interpretExpr (C.CBinary op lhs rhs _) =
   binop op (interpretExpr lhs) (interpretExpr rhs)
 
-interpretDeclarations :: C.CDecl -> A.Declaration Pos
-interpretDeclarations (C.CDecl specs
-        [(Just (C.CDeclr (Just i) [] Nothing [] _), Just (C.CInitExpr e _), _)] _) =
-  A.Var { A.varT = Just $ baseTypeOf specs
-        , A.varPat = A.UniversalPattern dummyPos (applyRenames i) [] Nothing
-        , A._varExpr1 = Just $ interpretExpr e
-        , A._varExpr2 = Nothing
-        }
+interpretDeclarations :: C.CDecl -> [A.Declaration Pos]
+interpretDeclarations (C.CDecl specs declrs _) =
+  fmap go declrs
+  where
+    go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> A.Declaration Pos
+    go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) =
+      A.Var { A.varT = Just $ baseTypeOf specs
+            , A.varPat = A.UniversalPattern dummyPos (applyRenames ident) [] Nothing
+            , A._varExpr1 = fmap cInit initi
+            , A._varExpr2 = Nothing
+            }
+    cInit :: C.CInit -> A.Expression Pos
+    cInit (C.CInitExpr e _) = interpretExpr e
 
-interpretBlockItemDecl :: C.CBlockItem -> A.Declaration Pos
+interpretBlockItemDecl :: C.CBlockItem -> [A.Declaration Pos]
 interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
 interpretBlockItemDecl (C.CBlockStmt statement) =
@@ -58,7 +63,7 @@ interpretBlockItemExp (C.CBlockStmt statement) =
 interpretStatement :: C.CStat -> A.Expression Pos
 interpretStatement (C.CCompound [] items _) =
   A.Let dummyPos
-    (A.ATS $ fmap interpretBlockItemDecl $ init items)
+    (A.ATS $ concat $ fmap interpretBlockItemDecl $ init items)
     (Just $ interpretBlockItemExp $ last items)
 interpretStatement (C.CReturn (Just expr) _) =
   interpretExpr expr
