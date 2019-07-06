@@ -31,8 +31,8 @@ baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 interpretExpr :: C.CExpr -> A.Expression Pos
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> A.IntLit $ fromInteger $ C.getCInteger int
-interpretExpr (C.CVar i _) =
-  A.NamedVal $ A.Unqualified $ applyRenames i
+interpretExpr (C.CVar ident _) =
+  A.NamedVal $ A.Unqualified $ applyRenames ident
 interpretExpr (C.CBinary op lhs rhs _) =
   binop op (interpretExpr lhs) (interpretExpr rhs)
 
