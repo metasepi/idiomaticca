@@ -18,8 +18,15 @@ binop op lhs rhs = case op of
   C.CAddOp -> A.Binary A.Add lhs rhs
   C.CSubOp -> A.Binary A.Sub lhs rhs
 
-singleSpec :: [C.CTypeSpec] -> A.Type Pos
-singleSpec [C.CIntType _] = A.Named $ A.Unqualified "int"
+applyRenames :: C.Ident -> String
+applyRenames ident = case C.identToString ident of
+  name -> name
+
+singleSpec :: C.CTypeSpec -> A.Type Pos
+singleSpec (C.CIntType _) = A.Named $ A.Unqualified "int"
+
+baseTypeOf :: [C.CDeclSpec] -> A.Type Pos
+baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 
 interpretExpr :: C.CExpr -> A.Expression Pos
 interpretExpr (C.CConst c) = case c of
@@ -28,14 +35,19 @@ interpretExpr (C.CBinary op lhs rhs _) =
   binop op (interpretExpr lhs) (interpretExpr rhs)
 
 interpretDeclarations :: C.CDecl -> A.Declaration Pos
-interpretDeclarations (C.CDecl specs _ _) =
-  -- xxx singleSpec specs
-  undefined
+interpretDeclarations (C.CDecl specs
+        [(Just (C.CDeclr (Just i) [] Nothing [] _), Just (C.CInitExpr e _), _)] _) =
+  A.Var { A.varT = Just $ baseTypeOf specs
+        , A.varPat = A.UniversalPattern dummyPos (applyRenames i) [] Nothing
+        , A._varExpr1 = Just $ interpretExpr e
+        , A._varExpr2 = Nothing
+        }
 
 interpretBlockItemDecl :: C.CBlockItem -> A.Declaration Pos
 interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
-interpretBlockItemDecl (C.CBlockStmt statement) = undefined
+interpretBlockItemDecl (C.CBlockStmt statement) =
+  undefined
 
 interpretBlockItemExp :: C.CBlockItem -> A.Expression Pos
 interpretBlockItemExp (C.CBlockStmt statement) =
@@ -43,7 +55,8 @@ interpretBlockItemExp (C.CBlockStmt statement) =
 
 interpretStatement :: C.CStat -> A.Expression Pos
 interpretStatement (C.CCompound [] items _) =
-  A.Let dummyPos (A.ATS $ fmap interpretBlockItemDecl $ init items)
+  A.Let dummyPos
+    (A.ATS $ fmap interpretBlockItemDecl $ init items)
     (Just $ interpretBlockItemExp $ last items)
 interpretStatement (C.CReturn (Just expr) _) =
   interpretExpr expr
