@@ -9,6 +9,9 @@ install:
 doc:
 	stack haddock --open
 
+hlint:
+	hlint `find app/ src/ test/ -name "*.hs"`
+
 test: all
 	make -C regress clean
 	$(foreach i,$(SUBDIRS),$(MAKE) -C $i $@ &&) true
