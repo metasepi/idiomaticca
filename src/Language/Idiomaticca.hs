@@ -87,15 +87,16 @@ interpretStatementExp (C.CReturn (Just expr) _) =
 
 interpretFunction :: C.CFunDef -> A.Declaration Pos
 interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
-  A.Impl Nothing -- implArgs
-           (A.Implement -- _impl
+  A.Impl { A.implArgs = Nothing
+         , A._impl = A.Implement
              dummyPos -- pos
              [] -- preUniversalsI
              [] -- implicits
              [] -- universalsI
              (A.Unqualified $ C.identToString ident) -- nameI
              (Just []) -- iArgs
-             (Right $ interpretStatementExp body)) -- _iExpression
+             (Right $ interpretStatementExp body) -- _iExpression
+         }
 
 perDecl :: C.CExtDecl -> A.Declaration Pos
 perDecl (C.CFDefExt f) = interpretFunction f
