@@ -82,7 +82,9 @@ The other examples are found at [regress](./regress/) directory.
 
 ## Contributing
 
-Not yet acceptable. You can feel free to post [some issues](https://github.com/metasepi/idiomaticca/issues) or [mailing list](http://groups.google.com/group/metasepi).
+Please send pull request, and write your name and reachable e-mail address in [CONTRIBUTORS.md](./CONTRIBUTORS.md).
+
+You also feel free to post [some issues](https://github.com/metasepi/idiomaticca/issues) or [mailing list](http://groups.google.com/group/metasepi).
 
 ## Acknowledgements
 
