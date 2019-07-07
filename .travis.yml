@@ -1,0 +1,47 @@
+dist: xenial
+
+language: c
+
+cache:
+  directories:
+    - $HOME/.stack
+
+addons:
+  apt:
+    packages:
+      - libgc-dev
+      - libgmp-dev
+
+before_install:
+  - date
+  - cat /proc/cpuinfo
+  # Stack
+  - mkdir -p $HOME/.local/bin
+  - export PATH=$HOME/.local/bin:$PATH
+  - travis_retry curl -L https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+  # Clone
+  - git clone https://github.com/githwxi/ATS-Postiats.git
+  # Build ATS1
+  - export ATSHOME=${HOME}/ats-lang-anairiats-0.2.12
+  - export ATSHOMERELOC=ATS-0.2.12
+  - ${HOME}/ATS-Postiats/travis-ci/install-ats1.sh 0.2.12
+  - cd ${ATSHOME} && ./configure && make
+  # Build ATS2
+  - export PATSHOME=${HOME}/ATS-Postiats
+  - export PATH=${PATH}:${PATSHOME}/bin
+  - cd ${PATSHOME} && make -f Makefile_devl
+  # Show version
+  - gcc --version
+  - patsopt --version
+
+install:
+  - cd ${TRAVIS_BUILD_DIR}
+  - make setup
+
+script:
+  - cd ${TRAVIS_BUILD_DIR}
+  - make
+  - make test
+
+after_script:
+  - date
