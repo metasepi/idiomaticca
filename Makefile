@@ -1,4 +1,5 @@
 SUBDIRS := regress
+HSSRC := `find app/ src/ test/ -name "*.hs"`
 
 all:
 	stack build
@@ -10,7 +11,7 @@ doc:
 	stack haddock --open
 
 hlint:
-	hlint `find app/ src/ test/ -name "*.hs"`
+	hlint $(HSSRC)
 
 test: all
 	make -C regress clean
