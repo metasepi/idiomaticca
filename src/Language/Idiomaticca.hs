@@ -37,6 +37,13 @@ interpretExpr (C.CBinary op lhs rhs _) =
   binop op (interpretExpr lhs) (interpretExpr rhs)
 interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) =
   A.Binary A.Mutate (interpretExpr expr1) (interpretExpr expr2)
+interpretExpr (C.CCall (C.CVar ident _) args _) =
+  A.Call { A.callName = A.Unqualified $ C.identToString ident
+         , A.callImplicits = []
+         , A.callUniversals = []
+         , A.callProofs = Nothing
+         , A.callArgs = fmap interpretExpr args
+         }
 
 interpretDeclarations :: C.CDecl -> [A.Declaration Pos]
 interpretDeclarations (C.CDecl specs declrs _) =
