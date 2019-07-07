@@ -1,4 +1,6 @@
-# Idiomaticca: translate IDIOMATIC C into readable ATS [![Build Status](https://travis-ci.org/metasepi/idiomaticca.svg)](https://travis-ci.org/metasepi/idiomaticca)
+# Idiomaticca: translate IDIOMATIC C into readable ATS
+
+[![Build Status](https://travis-ci.org/metasepi/idiomaticca.svg)](https://travis-ci.org/metasepi/idiomaticca)
 
 ## What's this?
 
