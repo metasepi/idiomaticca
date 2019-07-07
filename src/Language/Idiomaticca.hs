@@ -35,6 +35,8 @@ interpretExpr (C.CVar ident _) =
   A.NamedVal $ A.Unqualified $ applyRenames ident
 interpretExpr (C.CBinary op lhs rhs _) =
   binop op (interpretExpr lhs) (interpretExpr rhs)
+interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) =
+  A.Binary A.Mutate (interpretExpr expr1) (interpretExpr expr2)
 
 interpretDeclarations :: C.CDecl -> [A.Declaration Pos]
 interpretDeclarations (C.CDecl specs declrs _) =
@@ -54,18 +56,26 @@ interpretBlockItemDecl :: C.CBlockItem -> [A.Declaration Pos]
 interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
 interpretBlockItemDecl (C.CBlockStmt statement) =
-  undefined
+  [interpretStatementDecl statement]
 
 interpretBlockItemExp :: C.CBlockItem -> A.Expression Pos
 interpretBlockItemExp (C.CBlockStmt statement) =
-  interpretStatement statement
+  interpretStatementExp statement
 
-interpretStatement :: C.CStat -> A.Expression Pos
-interpretStatement (C.CCompound [] items _) =
+interpretStatementDecl :: C.CStat -> A.Declaration Pos
+interpretStatementDecl (C.CExpr (Just expr) _) =
+  A.Val { A.add = A.None
+        , A.valT = Nothing
+        , A.valPat = Just (A.PLiteral (A.VoidLiteral dummyPos))
+        , A._valExpression = Just $ interpretExpr expr
+        }
+
+interpretStatementExp :: C.CStat -> A.Expression Pos
+interpretStatementExp (C.CCompound [] items _) =
   A.Let dummyPos
     (A.ATS $ concat $ fmap interpretBlockItemDecl $ init items)
     (Just $ interpretBlockItemExp $ last items)
-interpretStatement (C.CReturn (Just expr) _) =
+interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 
 interpretFunction :: C.CFunDef -> A.Declaration Pos
@@ -78,7 +88,7 @@ interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
              [] -- universalsI
              (A.Unqualified $ C.identToString ident) -- nameI
              (Just []) -- iArgs
-             (Right $ interpretStatement body)) -- _iExpression
+             (Right $ interpretStatementExp body)) -- _iExpression
 
 perDecl :: C.CExtDecl -> A.Declaration Pos
 perDecl (C.CFDefExt f) = interpretFunction f
