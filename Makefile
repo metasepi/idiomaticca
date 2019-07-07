@@ -4,6 +4,9 @@ HSSRC := `find app/ src/ test/ -name "*.hs"`
 all:
 	stack build
 
+setup:
+	stack --no-terminal --install-ghc test --only-dependencies
+
 install:
 	stack install
 
@@ -23,4 +26,4 @@ clean:
 	rm -f idiomaticca.cabal
 	$(foreach i,$(SUBDIRS),$(MAKE) -C $i $@ &&) true
 
-.PHONY: all install test clean
+.PHONY: all setup install hlint test clean
