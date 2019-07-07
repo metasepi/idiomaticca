@@ -73,7 +73,7 @@ interpretStatementDecl (C.CExpr (Just expr) _) =
 interpretStatementExp :: C.CStat -> A.Expression Pos
 interpretStatementExp (C.CCompound [] items _) =
   A.Let dummyPos
-    (A.ATS $ concat $ fmap interpretBlockItemDecl $ init items)
+    (A.ATS $ concatMap interpretBlockItemDecl $ init items)
     (Just $ interpretBlockItemExp $ last items)
 interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr

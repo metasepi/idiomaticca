@@ -56,7 +56,7 @@ run (Trans file) = do
 run (DumpAts file) = do
   atsSrc <- readFile file
   let Right atsAst = A.parse atsSrc
-  putStrLn $ show atsAst
+  print atsAst
 run (DumpC file) = do
   Right cAst <- C.parseCFilePre file
-  putStrLn $ show cAst
+  print cAst
