@@ -41,7 +41,7 @@ interpretExpr (C.CBinary op lhs rhs _) =
 interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) =
   A.Binary A.Mutate (interpretExpr expr1) (interpretExpr expr2)
 interpretExpr (C.CCall (C.CVar ident _) args _) =
-  A.Call { A.callName = A.Unqualified $ C.identToString ident
+  A.Call { A.callName = A.Unqualified $ applyRenames ident
          , A.callImplicits = []
          , A.callUniversals = []
          , A.callProofs = Nothing
@@ -90,17 +90,17 @@ interpretStatementExp (C.CReturn (Just expr) _) =
 
 interpretFunction :: C.CFunDef -> State PreDecls (A.Declaration Pos)
 interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) _ _ _ _) _ body _) = do
-  let fname = C.identToString ident
+  let fname = applyRenames ident
   s <- get
   if elem fname s then
-    return A.Impl { A.implArgs = Nothing -- xxx
+    return A.Impl { A.implArgs = Nothing
                   , A._impl = A.Implement
                       dummyPos -- pos
                       [] -- preUniversalsI
                       [] -- implicits
                       [] -- universalsI
                       (A.Unqualified fname) -- nameI
-                      (Just []) -- iArgs
+                      (Just []) -- iArgs xxx
                       (Right $ interpretStatementExp body) -- _iExpression
                   }
     else do
@@ -110,7 +110,7 @@ interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) _ _ _ _) _ body _) = do
                       , A.sig = Just ""
                       , A.preUniversals = []
                       , A.universals = []
-                      , A.args = Nothing -- xxx
+                      , A.args = Just [] -- xxx
                       , A.returnType = Just $ baseTypeOf tret
                       , A.termetric = Nothing
                       , A._expression = Just $ interpretStatementExp body
