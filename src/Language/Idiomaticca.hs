@@ -88,9 +88,18 @@ interpretStatementExp (C.CCompound [] items _) =
 interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 
+interpretCDerivedDeclr :: C.CDerivedDeclr -> A.Args Pos
+interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
+  Just $ fmap go decls
+  where
+    go :: C.CDecl -> A.Arg Pos
+    go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) =
+      A.Arg (A.Both (applyRenames ident) (baseTypeOf specs))
+
 interpretFunction :: C.CFunDef -> State PreDecls (A.Declaration Pos)
-interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) _ _ _ _) _ body _) = do
+interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
   let fname = applyRenames ident
+  let args = interpretCDerivedDeclr derived
   s <- get
   if elem fname s then
     return A.Impl { A.implArgs = Nothing
@@ -100,7 +109,7 @@ interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) _ _ _ _) _ body _) = do
                       [] -- implicits
                       [] -- universalsI
                       (A.Unqualified fname) -- nameI
-                      (Just []) -- iArgs xxx
+                      args -- iArgs
                       (Right $ interpretStatementExp body) -- _iExpression
                   }
     else do
@@ -110,7 +119,7 @@ interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) _ _ _ _) _ body _) = do
                       , A.sig = Just ""
                       , A.preUniversals = []
                       , A.universals = []
-                      , A.args = Just [] -- xxx
+                      , A.args = args
                       , A.returnType = Just $ baseTypeOf tret
                       , A.termetric = Nothing
                       , A._expression = Just $ interpretStatementExp body
