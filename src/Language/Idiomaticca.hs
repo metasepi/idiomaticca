@@ -3,6 +3,7 @@ module Language.Idiomaticca
     ( interpretTranslationUnit
     ) where
 
+import Control.Monad.State
 import qualified Language.ATS as A
 import qualified Language.C as C
 
@@ -10,6 +11,8 @@ type Pos = A.AlexPosn
 
 dummyPos :: Pos
 dummyPos = A.AlexPn 0 0 0
+
+type PreDecls = [String]
 
 binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> A.Expression Pos
 binop op lhs rhs = case op of
@@ -85,20 +88,20 @@ interpretStatementExp (C.CCompound [] items _) =
 interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 
-interpretFunction :: C.CFunDef -> A.Declaration Pos
+interpretFunction :: C.CFunDef -> State PreDecls (A.Declaration Pos)
 interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
-  A.Impl { A.implArgs = Nothing
-         , A._impl = A.Implement
-             dummyPos -- pos
-             [] -- preUniversalsI
-             [] -- implicits
-             [] -- universalsI
-             (A.Unqualified $ C.identToString ident) -- nameI
-             (Just []) -- iArgs
-             (Right $ interpretStatementExp body) -- _iExpression
-         }
+  return A.Impl { A.implArgs = Nothing
+                , A._impl = A.Implement
+                    dummyPos -- pos
+                    [] -- preUniversalsI
+                    [] -- implicits
+                    [] -- universalsI
+                    (A.Unqualified $ C.identToString ident) -- nameI
+                    (Just []) -- iArgs
+                    (Right $ interpretStatementExp body) -- _iExpression
+                }
 
-perDecl :: C.CExtDecl -> A.Declaration Pos
+perDecl :: C.CExtDecl -> State PreDecls (A.Declaration Pos)
 perDecl (C.CFDefExt f) = interpretFunction f
 
 copyleftComment :: [String]
@@ -127,4 +130,4 @@ copyleftComment =
 interpretTranslationUnit :: C.CTranslUnit -> A.ATS Pos
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
   A.ATS $ fmap A.Comment copyleftComment ++
-    A.Include "\"share/atspre_staload.hats\"" : fmap perDecl cDecls
+    A.Include "\"share/atspre_staload.hats\"" : evalState (mapM perDecl cDecls) ["main"]
