@@ -89,17 +89,32 @@ interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 
 interpretFunction :: C.CFunDef -> State PreDecls (A.Declaration Pos)
-interpretFunction (C.CFunDef _ (C.CDeclr (Just ident) _ _ _ _) _ body _) =
-  return A.Impl { A.implArgs = Nothing
-                , A._impl = A.Implement
-                    dummyPos -- pos
-                    [] -- preUniversalsI
-                    [] -- implicits
-                    [] -- universalsI
-                    (A.Unqualified $ C.identToString ident) -- nameI
-                    (Just []) -- iArgs
-                    (Right $ interpretStatementExp body) -- _iExpression
-                }
+interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) _ _ _ _) _ body _) = do
+  let fname = C.identToString ident
+  s <- get
+  if elem fname s then
+    return A.Impl { A.implArgs = Nothing -- xxx
+                  , A._impl = A.Implement
+                      dummyPos -- pos
+                      [] -- preUniversalsI
+                      [] -- implicits
+                      [] -- universalsI
+                      (A.Unqualified fname) -- nameI
+                      (Just []) -- iArgs
+                      (Right $ interpretStatementExp body) -- _iExpression
+                  }
+    else do
+      modify (fname :)
+      return $ A.Func dummyPos
+        (A.Fun A.PreF { A.fname = A.Unqualified fname
+                      , A.sig = Just ""
+                      , A.preUniversals = []
+                      , A.universals = []
+                      , A.args = Nothing -- xxx
+                      , A.returnType = Just $ baseTypeOf tret
+                      , A.termetric = Nothing
+                      , A._expression = Just $ interpretStatementExp body
+                      })
 
 perDecl :: C.CExtDecl -> State PreDecls (A.Declaration Pos)
 perDecl (C.CFDefExt f) = interpretFunction f
