@@ -1,5 +1,6 @@
 *~
 .stack-work/
+a.out
 idiomaticca.cabal
 regress/*/*/main.dats
 regress/*/*/main_dats.c
