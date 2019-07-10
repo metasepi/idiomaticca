@@ -101,11 +101,8 @@ makeVal aExpr = A.Val { A.add = A.None
 interpretStatementDecl :: C.CStat -> A.Declaration Pos
 interpretStatementDecl (C.CExpr (Just expr) _) =
   makeVal $ interpretExpr expr
-interpretStatementDecl (C.CIf cond sthen selse _) =
-  makeVal $ A.If
-    (A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0))
-    (interpretStatementExp sthen)
-    (fmap interpretStatementExp selse)
+interpretStatementDecl cIf@(C.CIf _ _ _ _) =
+  makeVal $ interpretStatementExp cIf
 
 interpretStatementExp :: C.CStat -> A.Expression Pos
 interpretStatementExp (C.CCompound [] items _) =
@@ -116,8 +113,11 @@ interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 interpretStatementExp (C.CExpr (Just expr) _) =
   interpretExpr expr
-interpretStatementExp s =
-  traceShow s undefined -- xxx Need to be fixed
+interpretStatementExp (C.CIf cond sthen selse _) =
+  A.If
+    (A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0))
+    (interpretStatementExp sthen)
+    (fmap interpretStatementExp selse)
 
 interpretCDerivedDeclr :: C.CDerivedDeclr -> A.Args Pos
 interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
