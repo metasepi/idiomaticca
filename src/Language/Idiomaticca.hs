@@ -3,6 +3,7 @@ module Language.Idiomaticca
     ( interpretTranslationUnit
     ) where
 
+import Control.Applicative
 import Control.Monad.State
 import qualified Language.ATS as A
 import qualified Language.C as C
@@ -29,6 +30,7 @@ singleSpec :: C.CTypeSpec -> A.Type Pos
 singleSpec (C.CIntType _) = A.Named $ A.Unqualified "int"
 
 baseTypeOf :: [C.CDeclSpec] -> A.Type Pos
+baseTypeOf (C.CStorageSpec _:ss) = baseTypeOf ss
 baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 
 interpretExpr :: C.CExpr -> A.Expression Pos
@@ -61,6 +63,22 @@ interpretDeclarations (C.CDecl specs declrs _) =
             }
     cInit :: C.CInit -> A.Expression Pos
     cInit (C.CInitExpr e _) = interpretExpr e
+
+interpretDeclarationsFunc :: C.CDecl -> State PreDecls (A.Declaration Pos)
+interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
+  let fname = applyRenames ident
+  let args = interpretCDerivedDeclr derived
+  modify (fname :)
+  return $ A.Func dummyPos
+    (A.Fun A.PreF { A.fname = A.Unqualified fname
+                  , A.sig = Just ""
+                  , A.preUniversals = []
+                  , A.universals = []
+                  , A.args = args
+                  , A.returnType = Just $ baseTypeOf specs
+                  , A.termetric = Nothing
+                  , A._expression = Nothing
+                  })
 
 interpretBlockItemDecl :: C.CBlockItem -> [A.Declaration Pos]
 interpretBlockItemDecl (C.CBlockDecl decl) =
@@ -95,13 +113,15 @@ interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
     go :: C.CDecl -> A.Arg Pos
     go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) =
       A.Arg (A.Both (applyRenames ident) (baseTypeOf specs))
+    go (C.CDecl specs [] _) =
+      A.Arg (A.Second (baseTypeOf specs))
 
 interpretFunction :: C.CFunDef -> State PreDecls (A.Declaration Pos)
-interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
+interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
   let fname = applyRenames ident
   let args = interpretCDerivedDeclr derived
   s <- get
-  if elem fname s then
+  if fname `elem` s then
     return A.Impl { A.implArgs = Nothing
                   , A._impl = A.Implement
                       dummyPos -- pos
@@ -120,13 +140,15 @@ interpretFunction (C.CFunDef tret (C.CDeclr (Just ident) [derived] _ _ _) _ body
                       , A.preUniversals = []
                       , A.universals = []
                       , A.args = args
-                      , A.returnType = Just $ baseTypeOf tret
+                      , A.returnType = Just $ baseTypeOf specs
                       , A.termetric = Nothing
                       , A._expression = Just $ interpretStatementExp body
                       })
 
 perDecl :: C.CExtDecl -> State PreDecls (A.Declaration Pos)
 perDecl (C.CFDefExt f) = interpretFunction f
+perDecl (C.CDeclExt d) =
+  A.Extern dummyPos <$> interpretDeclarationsFunc d
 
 copyleftComment :: [String]
 copyleftComment =
