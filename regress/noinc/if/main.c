@@ -1,8 +1,11 @@
 int main() {
-	int r = 5;
+	int r = 3;
 
-	if (r - 5) {
+	if (r - 3) {
+		r = 1;
 		r = 10;
+	} else if (r - 3) {
+		r = 20;
 	} else {
 		r = 3;
 	}
