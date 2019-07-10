@@ -5,6 +5,7 @@ module Language.Idiomaticca
 
 import Control.Applicative
 import Control.Monad.State
+import Debug.Trace
 import qualified Language.ATS as A
 import qualified Language.C as C
 
@@ -62,7 +63,7 @@ interpretDeclarations (C.CDecl specs declrs _) =
             , A._varExpr2 = Nothing
             }
     cInit :: C.CInit -> A.Expression Pos
-    cInit (C.CInitExpr e _) = interpretExpr e
+    cInit (C.CInitExpr expr _) = interpretExpr expr
 
 interpretDeclarationsFunc :: C.CDecl -> State PreDecls (A.Declaration Pos)
 interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
@@ -90,20 +91,30 @@ interpretBlockItemExp :: C.CBlockItem -> A.Expression Pos
 interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatementExp statement
 
+makeVal :: A.Expression Pos -> A.Declaration Pos
+makeVal aExpr = A.Val { A.add = A.None
+                      , A.valT = Nothing
+                      , A.valPat = Just (A.PLiteral (A.VoidLiteral dummyPos))
+                      , A._valExpression = Just aExpr
+                      }
+
 interpretStatementDecl :: C.CStat -> A.Declaration Pos
 interpretStatementDecl (C.CExpr (Just expr) _) =
-  A.Val { A.add = A.None
-        , A.valT = Nothing
-        , A.valPat = Just (A.PLiteral (A.VoidLiteral dummyPos))
-        , A._valExpression = Just $ interpretExpr expr
-        }
+  makeVal $ interpretExpr expr
+interpretStatementDecl (C.CIf cond sthen selse _) =
+  makeVal $ A.If
+    (A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0))
+    (interpretStatementExp sthen)
+    (fmap interpretStatementExp selse)
 
 interpretStatementExp :: C.CStat -> A.Expression Pos
 interpretStatementExp (C.CCompound [] items _) =
   A.Let dummyPos
-    (A.ATS $ concatMap interpretBlockItemDecl $ init items)
+    (A.ATS $ concatMap interpretBlockItemDecl $ init items) -- xxx Need to support return
     (Just $ interpretBlockItemExp $ last items)
 interpretStatementExp (C.CReturn (Just expr) _) =
+  interpretExpr expr
+interpretStatementExp (C.CExpr (Just expr) _) =
   interpretExpr expr
 
 interpretCDerivedDeclr :: C.CDerivedDeclr -> A.Args Pos
