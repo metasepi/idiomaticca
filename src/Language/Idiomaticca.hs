@@ -116,6 +116,8 @@ interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 interpretStatementExp (C.CExpr (Just expr) _) =
   interpretExpr expr
+interpretStatementExp s =
+  traceShow s undefined -- xxx Need to be fixed
 
 interpretCDerivedDeclr :: C.CDerivedDeclr -> A.Args Pos
 interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
