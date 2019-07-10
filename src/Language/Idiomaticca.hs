@@ -175,5 +175,11 @@ copyleftComment =
 -- | convert C tranlsation unit to ATS declarations.
 interpretTranslationUnit :: C.CTranslUnit -> A.ATS Pos
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
-  A.ATS $ fmap A.Comment copyleftComment ++
-    A.Include "\"share/atspre_staload.hats\"" : evalState (mapM perDecl cDecls) ["main"]
+  A.ATS $ fmap A.Comment copyleftComment
+    ++ A.Include "\"share/atspre_staload.hats\""
+     : A.Load { A.static = True
+              , A.withOctothorpe = False
+              , A.qualName = Just "UN"
+              , A.fileName = "\"prelude/SATS/unsafe.sats\""
+              }
+     : evalState (mapM perDecl cDecls) ["main"]
