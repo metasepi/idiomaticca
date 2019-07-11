@@ -6,7 +6,7 @@ int fib(int n) {
 		int tmp = f1;
 		f1 = f0 + f1;
 		f0 = tmp;
-	};
+	}
 
 	return f0;
 }
