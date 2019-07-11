@@ -70,6 +70,20 @@ makeCond cond = do
   cond' <- interpretExpr cond
   return $ A.Binary A.NotEq cond' (A.IntLit 0)
 
+makeFunc :: String -> A.Args Pos -> Maybe (A.Expression Pos) -> Maybe (A.Type Pos) -> State IEnv (A.Declaration Pos)
+makeFunc fname args body ret = do
+  modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
+  return $ A.Func dummyPos
+    (A.Fun A.PreF { A.fname = A.Unqualified fname
+                  , A.sig = Just ""
+                  , A.preUniversals = []
+                  , A.universals = []
+                  , A.args = args
+                  , A.returnType = ret
+                  , A.termetric = Nothing
+                  , A._expression = body
+                  })
+
 interpretExpr :: C.CExpr -> State IEnv (A.Expression Pos)
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> return $ A.IntLit $ fromInteger $ C.getCInteger int
@@ -119,17 +133,7 @@ interpretDeclarationsFunc :: C.CDecl -> State IEnv (A.Declaration Pos)
 interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
   args <- interpretCDerivedDeclr derived
-  modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
-  return $ A.Func dummyPos -- xxx duplicated!!!
-    (A.Fun A.PreF { A.fname = A.Unqualified fname
-                  , A.sig = Just ""
-                  , A.preUniversals = []
-                  , A.universals = []
-                  , A.args = args
-                  , A.returnType = Just $ baseTypeOf specs
-                  , A.termetric = Nothing
-                  , A._expression = Nothing
-                  })
+  makeFunc fname args Nothing (Just $ baseTypeOf specs)
 
 interpretBlockItemDecl :: C.CBlockItem -> State IEnv [A.Declaration Pos]
 interpretBlockItemDecl (C.CBlockDecl decl) =
@@ -208,18 +212,8 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
                       args -- iArgs
                       (Right body') -- _iExpression
                   }
-    else do
-      modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
-      return $ A.Func dummyPos
-        (A.Fun A.PreF { A.fname = A.Unqualified fname
-                      , A.sig = Just ""
-                      , A.preUniversals = []
-                      , A.universals = []
-                      , A.args = args
-                      , A.returnType = Just $ baseTypeOf specs
-                      , A.termetric = Nothing
-                      , A._expression = Just body'
-                      })
+    else
+      makeFunc fname args (Just body') (Just $ baseTypeOf specs)
 
 perDecl :: C.CExtDecl -> State IEnv (A.Declaration Pos)
 perDecl (C.CFDefExt f) = interpretFunction f
