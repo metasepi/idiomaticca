@@ -4,11 +4,11 @@ int main() {
 	if (r - 3) {
 		r = 1;
 		r = 10;
-	} else if (r - 3) {
+	} else if (r > 10) {
 		r = 20;
 	} else {
-		r = 3;
+		r = 30;
 	}
 
-	return r - 3;
+	return r - 30;
 }
