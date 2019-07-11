@@ -15,29 +15,30 @@ type Pos = A.AlexPosn
 dummyPos :: Pos
 dummyPos = A.AlexPn 0 0 0
 
-data IEnv = IEnv { envDeclFuns :: Set.Set String
-                 , envDeclVars :: Set.Set (String, A.Type Pos)
-                 , envUsedVars :: Set.Set String
+data IEnv = IEnv { iEnvDeclFuns :: Set.Set String
+                 , iEnvDeclVars :: Set.Set (String, A.Type Pos)
+                 , iEnvUsedVars :: Set.Set String
                  }
 
 defaultIEnv :: IEnv
-defaultIEnv = IEnv { envDeclFuns = Set.singleton "main"
-                   , envDeclVars = Set.empty
-                   , envUsedVars = Set.empty
+defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
+                   , iEnvDeclVars = Set.empty
+                   , iEnvUsedVars = Set.empty
                    }
 
-binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> A.Expression Pos
-binop op lhs rhs = case op of
-  C.CMulOp -> A.Binary A.Mult lhs rhs
-  C.CDivOp -> A.Binary A.Div lhs rhs
-  C.CAddOp -> A.Binary A.Add lhs rhs
-  C.CSubOp -> A.Binary A.Sub lhs rhs
-  C.CLeOp  -> A.Binary A.LessThan lhs rhs
-  C.CGrOp  -> A.Binary A.GreaterThan lhs rhs
-  C.CLeqOp -> A.Binary A.LessThanEq lhs rhs
-  C.CGeqOp -> A.Binary A.GreaterThanEq lhs rhs
-  C.CEqOp  -> A.Binary A.StaticEq lhs rhs
-  C.CNeqOp -> A.Binary A.NotEq lhs rhs
+binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> State IEnv (A.Expression Pos)
+binop op lhs rhs =
+  let op' = case op of C.CMulOp -> A.Mult
+                       C.CDivOp -> A.Div
+                       C.CAddOp -> A.Add
+                       C.CSubOp -> A.Sub
+                       C.CLeOp  -> A.LessThan
+                       C.CGrOp  -> A.GreaterThan
+                       C.CLeqOp -> A.LessThanEq
+                       C.CGeqOp -> A.GreaterThanEq
+                       C.CEqOp  -> A.StaticEq
+                       C.CNeqOp -> A.NotEq
+  in return $ A.Binary op' lhs rhs
 
 applyRenames :: C.Ident -> String
 applyRenames ident = case C.identToString ident of
@@ -57,52 +58,59 @@ makeVal aExpr = A.Val { A.add = A.None
                       , A._valExpression = Just aExpr
                       }
 
-makeCond :: C.CExpr -> A.Expression Pos
+makeCond :: C.CExpr -> State IEnv (A.Expression Pos)
 makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CGrOp  _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CLeqOp _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CGeqOp _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CEqOp  _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CNeqOp _ _ _) = interpretExpr cond
-makeCond cond =
-  A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0)
+makeCond cond = do
+  cond' <- interpretExpr cond
+  return $ A.Binary A.NotEq cond' (A.IntLit 0)
 
-interpretExpr :: C.CExpr -> A.Expression Pos
+interpretExpr :: C.CExpr -> State IEnv (A.Expression Pos)
 interpretExpr (C.CConst c) = case c of
-  C.CIntConst int _ -> A.IntLit $ fromInteger $ C.getCInteger int
+  C.CIntConst int _ -> return $ A.IntLit $ fromInteger $ C.getCInteger int
 interpretExpr (C.CVar ident _) =
-  A.NamedVal $ A.Unqualified $ applyRenames ident
-interpretExpr (C.CBinary op lhs rhs _) =
-  binop op (interpretExpr lhs) (interpretExpr rhs)
-interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) =
-  A.Binary A.Mutate (interpretExpr expr1) (interpretExpr expr2)
-interpretExpr (C.CCall (C.CVar ident _) args _) =
-  A.Call { A.callName = A.Unqualified $ applyRenames ident
-         , A.callImplicits = []
-         , A.callUniversals = []
-         , A.callProofs = Nothing
-         , A.callArgs = fmap interpretExpr args
-         }
+  return $ A.NamedVal $ A.Unqualified $ applyRenames ident
+interpretExpr (C.CBinary op lhs rhs _) = do
+  lhs' <- interpretExpr lhs
+  rhs' <- interpretExpr rhs
+  binop op lhs' rhs'
+interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) = do
+  expr1' <- interpretExpr expr1
+  expr2' <- interpretExpr expr2
+  return $ A.Binary A.Mutate expr1' expr2'
+interpretExpr (C.CCall (C.CVar ident _) args _) = do
+  args' <- mapM interpretExpr args
+  return $ A.Call { A.callName = A.Unqualified $ applyRenames ident
+                  , A.callImplicits = []
+                  , A.callUniversals = []
+                  , A.callProofs = Nothing
+                  , A.callArgs = args'
+                  }
 
-interpretDeclarations :: C.CDecl -> [A.Declaration Pos]
+interpretDeclarations :: C.CDecl -> State IEnv [A.Declaration Pos]
 interpretDeclarations (C.CDecl specs declrs _) =
-  fmap go declrs
+  mapM go declrs
   where
-    go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> A.Declaration Pos
-    go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) =
-      A.Var { A.varT = Just $ baseTypeOf specs
-            , A.varPat = A.UniversalPattern dummyPos (applyRenames ident) [] Nothing
-            , A._varExpr1 = fmap cInit initi
-            , A._varExpr2 = Nothing
-            }
-    cInit :: C.CInit -> A.Expression Pos
+    go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> State IEnv (A.Declaration Pos)
+    go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) = do
+      initi' <- mapM cInit initi
+      return $ A.Var { A.varT = Just $ baseTypeOf specs
+                     , A.varPat = A.UniversalPattern dummyPos (applyRenames ident) [] Nothing
+                     , A._varExpr1 = initi'
+                     , A._varExpr2 = Nothing
+                     }
+    cInit :: C.CInit -> State IEnv (A.Expression Pos)
     cInit (C.CInitExpr expr _) = interpretExpr expr
 
 interpretDeclarationsFunc :: C.CDecl -> State IEnv (A.Declaration Pos)
 interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
   let args = interpretCDerivedDeclr derived
-  modify $ \e -> e { envDeclFuns = Set.insert fname (envDeclFuns e) }
+  modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
@@ -114,37 +122,42 @@ interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived]
                   , A._expression = Nothing
                   })
 
-interpretBlockItemDecl :: C.CBlockItem -> [A.Declaration Pos]
+interpretBlockItemDecl :: C.CBlockItem -> State IEnv [A.Declaration Pos]
 interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
-interpretBlockItemDecl (C.CBlockStmt statement) =
-  [interpretStatementDecl statement]
+interpretBlockItemDecl (C.CBlockStmt statement) = do
+  statement' <- interpretStatementDecl statement
+  return [statement']
 
-interpretBlockItemExp :: C.CBlockItem -> A.Expression Pos
+interpretBlockItemExp :: C.CBlockItem -> State IEnv (A.Expression Pos)
 interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatementExp statement
 
-interpretStatementDecl :: C.CStat -> A.Declaration Pos
-interpretStatementDecl (C.CExpr (Just expr) _) =
-  makeVal $ interpretExpr expr
-interpretStatementDecl cIf@C.CIf{} =
-  makeVal $ interpretStatementExp cIf
+interpretStatementDecl :: C.CStat -> State IEnv (A.Declaration Pos)
+interpretStatementDecl (C.CExpr (Just expr) _) = do
+  expr' <- interpretExpr expr
+  return $ makeVal expr'
+interpretStatementDecl cIf@C.CIf{} = do
+  cIf' <- interpretStatementExp cIf
+  return $ makeVal cIf'
 interpretStatementDecl stat =
   traceShow stat undefined
 
-interpretStatementExp :: C.CStat -> A.Expression Pos
-interpretStatementExp (C.CCompound [] items _) =
-  A.Let dummyPos
-    (A.ATS $ concatMap interpretBlockItemDecl $ init items) -- xxx Need to support return
-    (Just $ interpretBlockItemExp $ last items)
+interpretStatementExp :: C.CStat -> State IEnv (A.Expression Pos)
+interpretStatementExp (C.CCompound [] items _) = do
+  -- xxx Need to support return
+  decls' <- fmap concat $ mapM interpretBlockItemDecl $ init items
+  exp' <- interpretBlockItemExp $ last items
+  return $ A.Let dummyPos (A.ATS decls') (Just exp')
 interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 interpretStatementExp (C.CExpr (Just expr) _) =
   interpretExpr expr
-interpretStatementExp (C.CIf cond sthen selse _) =
-  A.If (makeCond cond)
-    (interpretStatementExp sthen)
-    (fmap interpretStatementExp selse)
+interpretStatementExp (C.CIf cond sthen selse _) = do
+  cond' <- makeCond cond
+  sthen' <- interpretStatementExp sthen
+  selse' <- mapM interpretStatementExp selse
+  return $ A.If cond' sthen' selse'
 
 interpretCDerivedDeclr :: C.CDerivedDeclr -> A.Args Pos
 interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
@@ -161,7 +174,8 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
   let fname = applyRenames ident
   let args = interpretCDerivedDeclr derived
   s <- get
-  if fname `Set.member` envDeclFuns s then
+  body' <- interpretStatementExp body
+  if fname `Set.member` iEnvDeclFuns s then
     return A.Impl { A.implArgs = Nothing
                   , A._impl = A.Implement
                       dummyPos -- pos
@@ -170,10 +184,10 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
                       [] -- universalsI
                       (A.Unqualified fname) -- nameI
                       args -- iArgs
-                      (Right $ interpretStatementExp body) -- _iExpression
+                      (Right body') -- _iExpression
                   }
     else do
-      modify $ \e -> e { envDeclFuns = Set.insert fname (envDeclFuns e) }
+      modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
       return $ A.Func dummyPos
         (A.Fun A.PreF { A.fname = A.Unqualified fname
                       , A.sig = Just ""
@@ -182,7 +196,7 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
                       , A.args = args
                       , A.returnType = Just $ baseTypeOf specs
                       , A.termetric = Nothing
-                      , A._expression = Just $ interpretStatementExp body
+                      , A._expression = Just body'
                       })
 
 perDecl :: C.CExtDecl -> State IEnv (A.Declaration Pos)
