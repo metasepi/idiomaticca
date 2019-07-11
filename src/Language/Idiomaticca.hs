@@ -113,7 +113,7 @@ interpretDeclarations (C.CDecl specs declrs _) =
 interpretDeclarationsFunc :: C.CDecl -> State IEnv (A.Declaration Pos)
 interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
-  let args = interpretCDerivedDeclr derived
+  args <- interpretCDerivedDeclr derived
   modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
@@ -163,11 +163,12 @@ interpretStatementExp (C.CIf cond sthen selse _) = do
   selse' <- mapM interpretStatementExp selse
   return $ A.If cond' sthen' selse'
 
-interpretCDerivedDeclr :: C.CDerivedDeclr -> A.Args Pos
+interpretCDerivedDeclr :: C.CDerivedDeclr -> State IEnv (A.Args Pos)
 interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
-  Just $ fmap go decls
+  return $ Just $ fmap go decls
   where
     go :: C.CDecl -> A.Arg Pos
+    -- xxx modify iEnvUsedVars
     go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) =
       A.Arg (A.Both (applyRenames ident) (baseTypeOf specs))
     go (C.CDecl specs [] _) =
@@ -176,7 +177,7 @@ interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
 interpretFunction :: C.CFunDef -> State IEnv (A.Declaration Pos)
 interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
   let fname = applyRenames ident
-  let args = interpretCDerivedDeclr derived
+  args <- interpretCDerivedDeclr derived
   s <- get
   body' <- interpretStatementExp body
   if fname `Set.member` iEnvDeclFuns s then
