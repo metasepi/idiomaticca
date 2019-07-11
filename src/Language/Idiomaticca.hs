@@ -16,13 +16,14 @@ dummyPos :: Pos
 dummyPos = A.AlexPn 0 0 0
 
 data IEnv = IEnv { iEnvDeclFuns :: Set.Set String
-                 , iEnvDeclVars :: Set.Set (String, A.Type Pos)
+                 , iEnvDeclVars :: [(String, A.Type Pos)]
                  , iEnvUsedVars :: Set.Set String
                  }
+  deriving (Show)
 
 defaultIEnv :: IEnv
 defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
-                   , iEnvDeclVars = Set.empty
+                   , iEnvDeclVars = []
                    , iEnvUsedVars = Set.empty
                    }
 
@@ -100,9 +101,11 @@ interpretDeclarations (C.CDecl specs declrs _) =
     go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> State IEnv (A.Declaration Pos)
     go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) = do
       let name = applyRenames ident
+      let aType = baseTypeOf specs
+      modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
       modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
       initi' <- mapM cInit initi
-      return $ A.Var { A.varT = Just $ baseTypeOf specs
+      return $ A.Var { A.varT = Just aType
                      , A.varPat = A.UniversalPattern dummyPos name [] Nothing
                      , A._varExpr1 = initi'
                      , A._varExpr2 = Nothing
@@ -164,15 +167,19 @@ interpretStatementExp (C.CIf cond sthen selse _) = do
   return $ A.If cond' sthen' selse'
 
 interpretCDerivedDeclr :: C.CDerivedDeclr -> State IEnv (A.Args Pos)
-interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
-  return $ Just $ fmap go decls
+interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) = do
+  args <- mapM go decls
+  return $ Just args
   where
-    go :: C.CDecl -> A.Arg Pos
-    -- xxx modify iEnvUsedVars
-    go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) =
-      A.Arg (A.Both (applyRenames ident) (baseTypeOf specs))
-    go (C.CDecl specs [] _) =
-      A.Arg (A.Second (baseTypeOf specs))
+    go :: C.CDecl -> State IEnv (A.Arg Pos)
+    go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) = do
+      let name = applyRenames ident
+      let aType = baseTypeOf specs
+      modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
+      modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
+      return $ A.Arg (A.Both name aType)
+    go (C.CDecl specs [] _) = do
+      return $ A.Arg (A.Second (baseTypeOf specs))
 
 interpretFunction :: C.CFunDef -> State IEnv (A.Declaration Pos)
 interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
