@@ -1,8 +1,8 @@
 int fib(int n) {
-	int tmp, f0 = 0, f1 = 1;
+	int f0 = 0, f1 = 1;
 
 	while (n-- > 0) {
-		tmp = f1;
+		int tmp = f1;
 		f1 = f0 + f1;
 		f0 = tmp;
 	};
