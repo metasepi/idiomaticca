@@ -1,12 +1,11 @@
 int fib(int n) {
 	int tmp, f0 = 0, f1 = 1;
 
-	do {
-		n--;
+	while (n-- > 0) {
 		tmp = f1;
 		f1 = f0 + f1;
 		f0 = tmp;
-	} while (n > 0);
+	};
 
 	return f0;
 }
