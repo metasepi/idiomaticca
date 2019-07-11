@@ -6,6 +6,7 @@ module Language.Idiomaticca
 import Control.Applicative
 import Control.Monad.State
 import Debug.Trace
+import qualified Data.Set as Set
 import qualified Language.ATS as A
 import qualified Language.C as C
 
@@ -14,7 +15,16 @@ type Pos = A.AlexPosn
 dummyPos :: Pos
 dummyPos = A.AlexPn 0 0 0
 
-type PreDecls = [String]
+data IEnv = IEnv { envDeclFuns :: Set.Set String
+                 , envDeclVars :: Set.Set (String, A.Type Pos)
+                 , envUsedVars :: Set.Set String
+                 }
+
+defaultIEnv :: IEnv
+defaultIEnv = IEnv { envDeclFuns = Set.singleton "main"
+                   , envDeclVars = Set.empty
+                   , envUsedVars = Set.empty
+                   }
 
 binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> A.Expression Pos
 binop op lhs rhs = case op of
@@ -88,11 +98,11 @@ interpretDeclarations (C.CDecl specs declrs _) =
     cInit :: C.CInit -> A.Expression Pos
     cInit (C.CInitExpr expr _) = interpretExpr expr
 
-interpretDeclarationsFunc :: C.CDecl -> State PreDecls (A.Declaration Pos)
+interpretDeclarationsFunc :: C.CDecl -> State IEnv (A.Declaration Pos)
 interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
   let args = interpretCDerivedDeclr derived
-  modify (fname :)
+  modify $ \e -> e { envDeclFuns = Set.insert fname (envDeclFuns e) }
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
@@ -117,7 +127,7 @@ interpretBlockItemExp (C.CBlockStmt statement) =
 interpretStatementDecl :: C.CStat -> A.Declaration Pos
 interpretStatementDecl (C.CExpr (Just expr) _) =
   makeVal $ interpretExpr expr
-interpretStatementDecl cIf@(C.CIf _ _ _ _) =
+interpretStatementDecl cIf@C.CIf{} =
   makeVal $ interpretStatementExp cIf
 interpretStatementDecl stat =
   traceShow stat undefined
@@ -146,12 +156,12 @@ interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) =
     go (C.CDecl specs [] _) =
       A.Arg (A.Second (baseTypeOf specs))
 
-interpretFunction :: C.CFunDef -> State PreDecls (A.Declaration Pos)
+interpretFunction :: C.CFunDef -> State IEnv (A.Declaration Pos)
 interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
   let fname = applyRenames ident
   let args = interpretCDerivedDeclr derived
   s <- get
-  if fname `elem` s then
+  if fname `Set.member` envDeclFuns s then
     return A.Impl { A.implArgs = Nothing
                   , A._impl = A.Implement
                       dummyPos -- pos
@@ -163,7 +173,7 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
                       (Right $ interpretStatementExp body) -- _iExpression
                   }
     else do
-      modify (fname :)
+      modify $ \e -> e { envDeclFuns = Set.insert fname (envDeclFuns e) }
       return $ A.Func dummyPos
         (A.Fun A.PreF { A.fname = A.Unqualified fname
                       , A.sig = Just ""
@@ -175,7 +185,7 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
                       , A._expression = Just $ interpretStatementExp body
                       })
 
-perDecl :: C.CExtDecl -> State PreDecls (A.Declaration Pos)
+perDecl :: C.CExtDecl -> State IEnv (A.Declaration Pos)
 perDecl (C.CFDefExt f) = interpretFunction f
 perDecl (C.CDeclExt d) =
   A.Extern dummyPos <$> interpretDeclarationsFunc d
@@ -212,4 +222,4 @@ interpretTranslationUnit (C.CTranslUnit cDecls _) =
               , A.qualName = Just "UN"
               , A.fileName = "\"prelude/SATS/unsafe.sats\""
               }
-     : evalState (mapM perDecl cDecls) ["main"]
+     : evalState (mapM perDecl cDecls) defaultIEnv

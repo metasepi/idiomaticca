@@ -16,6 +16,7 @@ description:         Please see the README on GitHub at <https://github.com/meta
 
 dependencies:
 - base >= 4.7 && < 5
+- containers
 - mtl
 - filepath
 - language-ats
