@@ -72,8 +72,10 @@ makeCond cond = do
 interpretExpr :: C.CExpr -> State IEnv (A.Expression Pos)
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> return $ A.IntLit $ fromInteger $ C.getCInteger int
-interpretExpr (C.CVar ident _) =
-  return $ A.NamedVal $ A.Unqualified $ applyRenames ident
+interpretExpr (C.CVar ident _) = do
+  let name = applyRenames ident
+  modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
+  return $ A.NamedVal $ A.Unqualified name
 interpretExpr (C.CBinary op lhs rhs _) = do
   lhs' <- interpretExpr lhs
   rhs' <- interpretExpr rhs
@@ -97,9 +99,11 @@ interpretDeclarations (C.CDecl specs declrs _) =
   where
     go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> State IEnv (A.Declaration Pos)
     go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) = do
+      let name = applyRenames ident
+      modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
       initi' <- mapM cInit initi
       return $ A.Var { A.varT = Just $ baseTypeOf specs
-                     , A.varPat = A.UniversalPattern dummyPos (applyRenames ident) [] Nothing
+                     , A.varPat = A.UniversalPattern dummyPos name [] Nothing
                      , A._varExpr1 = initi'
                      , A._varExpr2 = Nothing
                      }
