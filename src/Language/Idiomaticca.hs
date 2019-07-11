@@ -109,6 +109,8 @@ interpretStatementDecl (C.CExpr (Just expr) _) =
   makeVal $ interpretExpr expr
 interpretStatementDecl cIf@(C.CIf _ _ _ _) =
   makeVal $ interpretStatementExp cIf
+interpretStatementDecl stat =
+  traceShow stat undefined
 
 makeCond :: C.CExpr -> A.Expression Pos
 makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
