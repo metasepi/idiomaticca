@@ -22,6 +22,12 @@ binop op lhs rhs = case op of
   C.CDivOp -> A.Binary A.Div lhs rhs
   C.CAddOp -> A.Binary A.Add lhs rhs
   C.CSubOp -> A.Binary A.Sub lhs rhs
+  C.CLeOp  -> A.Binary A.LessThan lhs rhs
+  C.CGrOp  -> A.Binary A.GreaterThan lhs rhs
+  C.CLeqOp -> A.Binary A.LessThanEq lhs rhs
+  C.CGeqOp -> A.Binary A.GreaterThanEq lhs rhs
+  C.CEqOp  -> A.Binary A.StaticEq lhs rhs
+  C.CNeqOp -> A.Binary A.NotEq lhs rhs
 
 applyRenames :: C.Ident -> String
 applyRenames ident = case C.identToString ident of
@@ -104,6 +110,16 @@ interpretStatementDecl (C.CExpr (Just expr) _) =
 interpretStatementDecl cIf@(C.CIf _ _ _ _) =
   makeVal $ interpretStatementExp cIf
 
+makeCond :: C.CExpr -> A.Expression Pos
+makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CGrOp  _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CLeqOp _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CGeqOp _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CEqOp  _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CNeqOp _ _ _) = interpretExpr cond
+makeCond cond =
+  A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0)
+
 interpretStatementExp :: C.CStat -> A.Expression Pos
 interpretStatementExp (C.CCompound [] items _) =
   A.Let dummyPos
@@ -114,8 +130,7 @@ interpretStatementExp (C.CReturn (Just expr) _) =
 interpretStatementExp (C.CExpr (Just expr) _) =
   interpretExpr expr
 interpretStatementExp (C.CIf cond sthen selse _) =
-  A.If
-    (A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0))
+  A.If (makeCond cond)
     (interpretStatementExp sthen)
     (fmap interpretStatementExp selse)
 
