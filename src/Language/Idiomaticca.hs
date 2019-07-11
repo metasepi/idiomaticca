@@ -40,6 +40,23 @@ baseTypeOf :: [C.CDeclSpec] -> A.Type Pos
 baseTypeOf (C.CStorageSpec _:ss) = baseTypeOf ss
 baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 
+makeVal :: A.Expression Pos -> A.Declaration Pos
+makeVal aExpr = A.Val { A.add = A.None
+                      , A.valT = Nothing
+                      , A.valPat = Just (A.PLiteral (A.VoidLiteral dummyPos))
+                      , A._valExpression = Just aExpr
+                      }
+
+makeCond :: C.CExpr -> A.Expression Pos
+makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CGrOp  _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CLeqOp _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CGeqOp _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CEqOp  _ _ _) = interpretExpr cond
+makeCond cond@(C.CBinary C.CNeqOp _ _ _) = interpretExpr cond
+makeCond cond =
+  A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0)
+
 interpretExpr :: C.CExpr -> A.Expression Pos
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> A.IntLit $ fromInteger $ C.getCInteger int
@@ -97,13 +114,6 @@ interpretBlockItemExp :: C.CBlockItem -> A.Expression Pos
 interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatementExp statement
 
-makeVal :: A.Expression Pos -> A.Declaration Pos
-makeVal aExpr = A.Val { A.add = A.None
-                      , A.valT = Nothing
-                      , A.valPat = Just (A.PLiteral (A.VoidLiteral dummyPos))
-                      , A._valExpression = Just aExpr
-                      }
-
 interpretStatementDecl :: C.CStat -> A.Declaration Pos
 interpretStatementDecl (C.CExpr (Just expr) _) =
   makeVal $ interpretExpr expr
@@ -111,16 +121,6 @@ interpretStatementDecl cIf@(C.CIf _ _ _ _) =
   makeVal $ interpretStatementExp cIf
 interpretStatementDecl stat =
   traceShow stat undefined
-
-makeCond :: C.CExpr -> A.Expression Pos
-makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CGrOp  _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CLeqOp _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CGeqOp _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CEqOp  _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CNeqOp _ _ _) = interpretExpr cond
-makeCond cond =
-  A.Binary A.NotEq (interpretExpr cond) (A.IntLit 0)
 
 interpretStatementExp :: C.CStat -> A.Expression Pos
 interpretStatementExp (C.CCompound [] items _) =
