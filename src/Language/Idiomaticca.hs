@@ -93,6 +93,8 @@ interpretExpr (C.CCall (C.CVar ident _) args _) = do
                   , A.callProofs = Nothing
                   , A.callArgs = args'
                   }
+interpretExpr expr =
+  traceShow expr undefined
 
 interpretDeclarations :: C.CDecl -> State IEnv [A.Declaration Pos]
 interpretDeclarations (C.CDecl specs declrs _) =
@@ -118,7 +120,7 @@ interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived]
   let fname = applyRenames ident
   args <- interpretCDerivedDeclr derived
   modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
-  return $ A.Func dummyPos
+  return $ A.Func dummyPos -- xxx duplicated!!!
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
                   , A.preUniversals = []
@@ -147,6 +149,14 @@ interpretStatementDecl (C.CExpr (Just expr) _) = do
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
   return $ makeVal cIf'
+interpretStatementDecl (C.CWhile cond stat False _) = do
+  let envCond = execState (interpretExpr cond) defaultIEnv
+  let envStat = execState (interpretStatementExp stat) defaultIEnv
+  let usedVars = Set.toList $ Set.union (iEnvUsedVars envCond) (iEnvUsedVars envStat)
+  s <- get
+  let l = fmap (\u -> fmap ((,)u) $ lookup u (iEnvDeclVars s)) usedVars
+  -- xxx Find all of value / define local function / call local function
+  traceShow l undefined
 interpretStatementDecl stat =
   traceShow stat undefined
 
