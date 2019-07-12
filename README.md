@@ -59,6 +59,9 @@ Translate the C code into ATS:
 ```
 $ idiomaticca trans regress/noinc/arithmetic_op/main.c > main.dats
 $ cat main.dats
+```
+
+```ats
 (*
  * Copyright (c) 2019 YOUR NAME
  * All rights reserved.
