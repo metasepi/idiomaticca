@@ -177,10 +177,10 @@ interpretStatementDecl stat =
 
 interpretStatementExp :: C.CStat -> State IEnv (A.Expression Pos)
 interpretStatementExp (C.CCompound [] items _) = do
-  -- xxx Need to support return
-  decls' <- fmap concat $ mapM interpretBlockItemDecl $ init items
-  exp' <- interpretBlockItemExp $ last items
-  return $ A.Let dummyPos (A.ATS decls') (Just exp')
+  -- xxx Find return with takeWhile like
+  decls <- fmap concat $ mapM interpretBlockItemDecl $ init items
+  exp <- interpretBlockItemExp $ last items
+  return $ A.Let dummyPos (A.ATS decls) (Just exp)
 interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 interpretStatementExp (C.CExpr (Just expr) _) =
