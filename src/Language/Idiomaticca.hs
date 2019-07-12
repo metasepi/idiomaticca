@@ -5,6 +5,7 @@ module Language.Idiomaticca
 
 import Control.Applicative
 import Control.Monad.State
+import Data.Maybe
 import Debug.Trace
 import qualified Data.Set as Set
 import qualified Language.ATS as A
@@ -26,6 +27,13 @@ defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
                    , iEnvDeclVars = []
                    , iEnvUsedVars = Set.empty
                    }
+
+iEnvDeclVarsArgs :: [(String, A.Type Pos)] -> A.Args Pos
+iEnvDeclVarsArgs vars =
+  Just $ map go vars
+  where
+    go :: (String, A.Type Pos) -> A.Arg Pos
+    go (name, aType) = A.Arg $ A.Both name aType
 
 binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> State IEnv (A.Expression Pos)
 binop op lhs rhs =
@@ -118,8 +126,8 @@ interpretDeclarations (C.CDecl specs declrs _) =
     go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
-      modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
-      modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
+      modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s
+                       , iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
       initi' <- mapM cInit initi
       return $ A.Var { A.varT = Just aType
                      , A.varPat = A.UniversalPattern dummyPos name [] Nothing
@@ -158,9 +166,12 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   let envStat = execState (interpretStatementExp stat) defaultIEnv
   let usedVars = Set.toList $ Set.union (iEnvUsedVars envCond) (iEnvUsedVars envStat)
   s <- get
-  let l = fmap (\u -> fmap ((,)u) $ lookup u (iEnvDeclVars s)) usedVars
-  -- xxx Find all of value / define local function / call local function
-  traceShow l undefined
+  let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
+  let args = iEnvDeclVarsArgs vars
+  body <- interpretStatementExp stat
+  -- xxx Should be unique function name "loop"
+  makeFunc "loop" args (Just body) (Just (A.Tuple dummyPos $ fmap snd vars))
+  -- xxx call local function
 interpretStatementDecl stat =
   traceShow stat undefined
 
@@ -192,7 +203,7 @@ interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) = do
       modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
       modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
       return $ A.Arg (A.Both name aType)
-    go (C.CDecl specs [] _) = do
+    go (C.CDecl specs [] _) =
       return $ A.Arg (A.Second (baseTypeOf specs))
 
 interpretFunction :: C.CFunDef -> State IEnv (A.Declaration Pos)
