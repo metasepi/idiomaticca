@@ -169,8 +169,8 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
   let args = iEnvDeclVarsArgs vars
   body <- interpretStatementExp stat
-  -- xxx Should be unique function name "loop"
-  makeFunc "loop" args (Just body) (Just (A.Tuple dummyPos $ fmap snd vars))
+  -- xxx Should be unique function name "loop_while"
+  makeFunc "loop_while" args (Just body) (Just (A.Tuple dummyPos $ fmap snd vars))
   -- xxx call local function
 interpretStatementDecl stat =
   traceShow stat undefined
