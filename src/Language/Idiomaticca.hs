@@ -8,6 +8,7 @@ import Data.Maybe
 import Debug.Trace
 import qualified Control.Monad.State as St
 import qualified Data.Set as Set
+import qualified Data.List.NonEmpty as Ne
 import qualified Language.ATS as A
 import qualified Language.C as C
 
@@ -37,6 +38,16 @@ iEnvDeclVarsArgs vars =
   where
     go :: (String, A.Type Pos) -> A.Arg Pos
     go (name, aType) = A.Arg $ A.Both name aType
+
+-- | Convert `iEnvDeclVars` to ATS expression for `callArgs`.
+iEnvDeclVarsCallArgs :: [(String, A.Type Pos)] -> [A.Expression Pos]
+iEnvDeclVarsCallArgs vars =
+  A.NamedVal . A.Unqualified <$> fmap fst vars
+
+-- | Convert `iEnvDeclVars` to ATS `TupleEx`.
+iEnvDeclVarsTupleEx :: [(String, A.Type Pos)] -> A.Expression Pos
+iEnvDeclVarsTupleEx vars =
+  A.TupleEx dummyPos $ Ne.fromList $ iEnvDeclVarsCallArgs vars
 
 -- | Keep the function name in `IEnv`.
 iEnvRecordFun :: String -> St.State IEnv ()
@@ -118,6 +129,16 @@ makeFunc fname args body ret = do
                   , A._expression = body
                   })
 
+-- | Make ATS `Call`
+makeCall :: String -> [A.Expression Pos] -> A.Expression Pos
+makeCall fname args =
+  A.Call { A.callName = A.Unqualified fname
+         , A.callImplicits = []
+         , A.callUniversals = []
+         , A.callProofs = Nothing
+         , A.callArgs = args
+         }
+
 -- | Convert C expression to ATS expression.
 interpretExpr :: C.CExpr -> St.State IEnv (A.Expression Pos)
 interpretExpr (C.CConst c) = case c of
@@ -136,12 +157,7 @@ interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) = do
   return $ A.Binary A.Mutate expr1' expr2'
 interpretExpr (C.CCall (C.CVar ident _) args _) = do
   args' <- mapM interpretExpr args
-  return $ A.Call { A.callName = A.Unqualified $ applyRenames ident
-                  , A.callImplicits = []
-                  , A.callUniversals = []
-                  , A.callProofs = Nothing
-                  , A.callArgs = args'
-                  }
+  return $ makeCall (applyRenames ident) args'
 interpretExpr expr =
   traceShow expr undefined
 
@@ -173,9 +189,8 @@ interpretDeclarations (C.CDecl specs declrs _) =
 interpretBlockItemDecl :: C.CBlockItem -> St.State IEnv [A.Declaration Pos]
 interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
-interpretBlockItemDecl (C.CBlockStmt statement) = do
-  statement' <- interpretStatementDecl statement
-  return [statement']
+interpretBlockItemDecl (C.CBlockStmt statement) =
+  interpretStatementDecl statement
 
 -- | Convert C block item to ATS expression.
 interpretBlockItemExp :: C.CBlockItem -> St.State IEnv (A.Expression Pos)
@@ -183,13 +198,13 @@ interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatementExp statement
 
 -- | Convert C statement to ATS declaration.
-interpretStatementDecl :: C.CStat -> St.State IEnv (A.Declaration Pos)
+interpretStatementDecl :: C.CStat -> St.State IEnv [A.Declaration Pos]
 interpretStatementDecl (C.CExpr (Just expr) _) = do
   expr' <- interpretExpr expr
-  return $ makeVal expr'
+  return [makeVal expr']
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
-  return $ makeVal cIf'
+  return [makeVal cIf']
 interpretStatementDecl (C.CWhile cond stat False _) = do
   -- Find used and pre-defined vars for args of recursion function
   let envCond = St.execState (interpretExpr cond) defaultIEnv
@@ -197,18 +212,27 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   let usedVars = Set.toList $ Set.union (iEnvUsedVars envCond) (iEnvUsedVars envStat)
   s <- St.get
   let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
+  -- Make recursion function
+  decls <- interpretStatementDecl stat
+  let loopName = "loop_while" -- xxx Should be unique function name "loop_while"
+  let call = makeCall loopName $ iEnvDeclVarsCallArgs vars
+  let body = A.Let dummyPos (A.ATS decls) (Just call)
+  cond' <- makeCond cond
+  let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
   let args = iEnvDeclVarsArgs vars
-  body <- interpretStatementExp stat
-  -- xxx Should be unique function name "loop_while"
-  makeFunc "loop_while" args (Just body) (Just (A.Tuple dummyPos $ fmap snd vars))
-  -- xxx Call local function
+  func <- makeFunc loopName args (Just ifte) (Just (A.Tuple dummyPos $ fmap snd vars))
+  -- xxx Call the local function
+  return [func]
+interpretStatementDecl (C.CCompound [] items _) =
+  concat <$> mapM interpretBlockItemDecl items
 interpretStatementDecl stat =
   traceShow stat undefined
 
 -- | Convert C statement to ATS expression.
 interpretStatementExp :: C.CStat -> St.State IEnv (A.Expression Pos)
 interpretStatementExp (C.CCompound [] items _) = do
-  -- xxx Find return with takeWhile like
+  -- xxx Find return like takeWhile
+  -- xxx Duplicated with interpretStatementDecl
   decls <- fmap concat $ mapM interpretBlockItemDecl $ init items
   exp <- interpretBlockItemExp $ last items
   return $ A.Let dummyPos (A.ATS decls) (Just exp)
