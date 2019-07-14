@@ -137,6 +137,20 @@ makeFunc fname args body ret = do
                   , A._expression = body
                   })
 
+-- | Implement ATS function.
+makeImpl :: String -> A.Args Pos -> A.Expression Pos -> St.State IEnv (A.Declaration Pos)
+makeImpl fname args body =
+  return A.Impl { A.implArgs = Nothing
+                , A._impl = A.Implement
+                    dummyPos -- pos
+                    [] -- preUniversalsI
+                    [] -- implicits
+                    [] -- universalsI
+                    (A.Unqualified fname) -- nameI
+                    args -- iArgs
+                    (Right body) -- _iExpression
+                }
+
 -- | Make ATS `Call`
 makeCall :: String -> [A.Expression Pos] -> A.Expression Pos
 makeCall fname args =
@@ -279,17 +293,8 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
   body' <- interpretStatementExp body
   s <- St.get
   if fname `Set.member` iEnvDeclFuns s then
-    -- Use `implement`, if the function already declared.
-    return A.Impl { A.implArgs = Nothing
-                  , A._impl = A.Implement
-                      dummyPos -- pos
-                      [] -- preUniversalsI
-                      [] -- implicits
-                      [] -- universalsI
-                      (A.Unqualified fname) -- nameI
-                      args -- iArgs
-                      (Right body') -- _iExpression
-                  }
+      -- Use `implement`, if the function already declared.
+      makeImpl fname args body'
     else
       -- Use `fun`, if the function not yet declared.
       makeFunc fname args (Just body') (Just $ baseTypeOf specs)
