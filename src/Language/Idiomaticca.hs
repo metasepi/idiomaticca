@@ -230,7 +230,9 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   let args = iEnvDeclVarsArgs vars
   func <- makeFunc loopName args (Just ifte) (Just (A.Tuple dummyPos $ fmap snd vars))
   -- Call the recursion function
+  -- xxx Patten should primed such as`val (n', f1', f0') =`
   let callPat = makeVal (Just $ iEnvDeclVarsTuplePat vars) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
+  -- xxx Assign new vars such as `val () = n := n'`
   return [func, callPat]
 interpretStatementDecl (C.CCompound [] items _) =
   concat <$> mapM interpretBlockItemDecl items
