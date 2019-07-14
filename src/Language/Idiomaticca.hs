@@ -243,7 +243,6 @@ interpretStatementDecl stat =
 interpretStatementExp :: C.CStat -> St.State IEnv (A.Expression Pos)
 interpretStatementExp (C.CCompound [] items _) = do
   -- xxx Find return like takeWhile
-  -- xxx Duplicated with interpretStatementDecl
   decls <- fmap concat $ mapM interpretBlockItemDecl $ init items
   exp <- interpretBlockItemExp $ last items
   return $ A.Let dummyPos (A.ATS decls) (Just exp)
