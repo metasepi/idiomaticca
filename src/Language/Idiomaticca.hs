@@ -125,6 +125,7 @@ makeCond cond = do
 -- | Make ATS function.
 makeFunc :: String -> A.Args Pos -> Maybe (A.Expression Pos) -> Maybe (A.Type Pos) -> St.State IEnv (A.Declaration Pos)
 makeFunc fname args body ret = do
+  -- xxx Should introduce `var` on args
   iEnvRecordFun fname
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
@@ -140,6 +141,7 @@ makeFunc fname args body ret = do
 -- | Implement ATS function.
 makeImpl :: String -> A.Args Pos -> A.Expression Pos -> St.State IEnv (A.Declaration Pos)
 makeImpl fname args body =
+  -- xxx Should introduce `var` on args
   return A.Impl { A.implArgs = Nothing
                 , A._impl = A.Implement
                     dummyPos -- pos
@@ -147,7 +149,7 @@ makeImpl fname args body =
                     [] -- implicits
                     [] -- universalsI
                     (A.Unqualified fname) -- nameI
-                    args -- iArgs
+                    (fmap reverse args) -- iArgs
                     (Right body) -- _iExpression
                 }
 
