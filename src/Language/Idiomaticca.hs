@@ -49,6 +49,11 @@ iEnvDeclVarsTupleEx :: [(String, A.Type Pos)] -> A.Expression Pos
 iEnvDeclVarsTupleEx vars =
   A.TupleEx dummyPos $ Ne.fromList $ iEnvDeclVarsCallArgs vars
 
+-- | Convert `iEnvDeclVars` to ATS data type for pattern.
+iEnvDeclVarsTuplePat :: [(String, A.Type Pos)] -> A.Pattern Pos
+iEnvDeclVarsTuplePat vars =
+  A.TuplePattern $ fmap (\n -> A.UniversalPattern dummyPos n [] Nothing) $ fmap fst vars
+
 -- | Keep the function name in `IEnv`.
 iEnvRecordFun :: String -> St.State IEnv ()
 iEnvRecordFun fname =
@@ -95,12 +100,15 @@ baseTypeOf (C.CStorageSpec _:ss) = baseTypeOf ss
 baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 
 -- | Make ATS `Val`.
-makeVal :: A.Expression Pos -> A.Declaration Pos
-makeVal aExpr = A.Val { A.add = A.None
-                      , A.valT = Nothing
-                      , A.valPat = Just (A.PLiteral (A.VoidLiteral dummyPos))
-                      , A._valExpression = Just aExpr
-                      }
+makeVal :: Maybe (A.Pattern Pos) -> A.Expression Pos -> A.Declaration Pos
+makeVal pat aExpr = A.Val { A.add = A.None
+                          , A.valT = Nothing
+                          , A.valPat = pat
+                          , A._valExpression = Just aExpr
+                          }
+
+patVoid :: Maybe (A.Pattern Pos)
+patVoid = Just (A.PLiteral (A.VoidLiteral dummyPos))
 
 -- | Make ATS condition, which is used by `if`. It needs boolean value.
 makeCond :: C.CExpr -> St.State IEnv (A.Expression Pos)
@@ -123,7 +131,7 @@ makeFunc fname args body ret = do
                   , A.sig = Just ""
                   , A.preUniversals = []
                   , A.universals = []
-                  , A.args = args
+                  , A.args = fmap reverse args
                   , A.returnType = ret
                   , A.termetric = Nothing
                   , A._expression = body
@@ -136,7 +144,7 @@ makeCall fname args =
          , A.callImplicits = []
          , A.callUniversals = []
          , A.callProofs = Nothing
-         , A.callArgs = args
+         , A.callArgs = reverse args
          }
 
 -- | Convert C expression to ATS expression.
@@ -201,10 +209,10 @@ interpretBlockItemExp (C.CBlockStmt statement) =
 interpretStatementDecl :: C.CStat -> St.State IEnv [A.Declaration Pos]
 interpretStatementDecl (C.CExpr (Just expr) _) = do
   expr' <- interpretExpr expr
-  return [makeVal expr']
+  return [makeVal patVoid expr']
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
-  return [makeVal cIf']
+  return [makeVal patVoid cIf']
 interpretStatementDecl (C.CWhile cond stat False _) = do
   -- Find used and pre-defined vars for args of recursion function
   let envCond = St.execState (interpretExpr cond) defaultIEnv
@@ -215,14 +223,15 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   -- Make recursion function
   decls <- interpretStatementDecl stat
   let loopName = "loop_while" -- xxx Should be unique function name "loop_while"
-  let call = makeCall loopName $ iEnvDeclVarsCallArgs vars
-  let body = A.Let dummyPos (A.ATS decls) (Just call)
+  let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
+  let body = A.Let dummyPos (A.ATS decls) (Just callLoop)
   cond' <- makeCond cond
   let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
   let args = iEnvDeclVarsArgs vars
   func <- makeFunc loopName args (Just ifte) (Just (A.Tuple dummyPos $ fmap snd vars))
-  -- xxx Call the local function
-  return [func]
+  -- Call the recursion function
+  let callPat = makeVal (Just $ iEnvDeclVarsTuplePat vars) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
+  return [func, callPat]
 interpretStatementDecl (C.CCompound [] items _) =
   concat <$> mapM interpretBlockItemDecl items
 interpretStatementDecl stat =
