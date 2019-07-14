@@ -4,9 +4,9 @@ module Language.Idiomaticca
     ) where
 
 import Control.Applicative
-import Control.Monad.State
 import Data.Maybe
 import Debug.Trace
+import qualified Control.Monad.State as St
 import qualified Data.Set as Set
 import qualified Language.ATS as A
 import qualified Language.C as C
@@ -16,26 +16,46 @@ type Pos = A.AlexPosn
 dummyPos :: Pos
 dummyPos = A.AlexPn 0 0 0
 
-data IEnv = IEnv { iEnvDeclFuns :: Set.Set String
-                 , iEnvDeclVars :: [(String, A.Type Pos)]
-                 , iEnvUsedVars :: Set.Set String
+-- | State to keep defined Functions and Vars.
+data IEnv = IEnv { iEnvDeclFuns :: Set.Set String -- declared function names
+                 , iEnvDeclVars :: [(String, A.Type Pos)] -- defined var names and types
+                 , iEnvUsedVars :: Set.Set String -- used var names
                  }
   deriving (Show)
 
+-- | State. `main` function already defined.
 defaultIEnv :: IEnv
 defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
                    , iEnvDeclVars = []
                    , iEnvUsedVars = Set.empty
                    }
 
+-- | Convert `iEnvDeclVars` to ATS `Args`.
 iEnvDeclVarsArgs :: [(String, A.Type Pos)] -> A.Args Pos
 iEnvDeclVarsArgs vars =
-  Just $ map go vars
+  Just $ fmap go vars
   where
     go :: (String, A.Type Pos) -> A.Arg Pos
     go (name, aType) = A.Arg $ A.Both name aType
 
-binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> State IEnv (A.Expression Pos)
+-- | Keep the function name in `IEnv`.
+iEnvRecordFun :: String -> St.State IEnv ()
+iEnvRecordFun fname =
+  St.modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
+
+-- | Use the var, and record `IEnv`.
+iEnvRecordUsedVar :: String -> St.State IEnv ()
+iEnvRecordUsedVar name =
+  St.modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
+
+-- | Declare and use the var, and record `IEnv`.
+iEnvRecordDeclUsedVar :: String -> A.Type Pos -> St.State IEnv ()
+iEnvRecordDeclUsedVar name aType = do
+  St.modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
+  iEnvRecordUsedVar name
+
+-- | Convert C binary operator to ATS expression.
+binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> St.State IEnv (A.Expression Pos)
 binop op lhs rhs =
   let op' = case op of C.CMulOp -> A.Mult
                        C.CDivOp -> A.Div
@@ -49,17 +69,21 @@ binop op lhs rhs =
                        C.CNeqOp -> A.NotEq
   in return $ A.Binary op' lhs rhs
 
+-- | Some names are special in C or special in ATS, or both.
 applyRenames :: C.Ident -> String
 applyRenames ident = case C.identToString ident of
   name -> name
+-- | xxx Get the rename rule.
 
 singleSpec :: C.CTypeSpec -> A.Type Pos
 singleSpec (C.CIntType _) = A.Named $ A.Unqualified "int"
 
+-- | Convert C declaration specifiers and qualifiers to ATS type.
 baseTypeOf :: [C.CDeclSpec] -> A.Type Pos
 baseTypeOf (C.CStorageSpec _:ss) = baseTypeOf ss
 baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 
+-- | Make ATS `Val`.
 makeVal :: A.Expression Pos -> A.Declaration Pos
 makeVal aExpr = A.Val { A.add = A.None
                       , A.valT = Nothing
@@ -67,7 +91,8 @@ makeVal aExpr = A.Val { A.add = A.None
                       , A._valExpression = Just aExpr
                       }
 
-makeCond :: C.CExpr -> State IEnv (A.Expression Pos)
+-- | Make ATS condition, which is used by `if`. It needs boolean value.
+makeCond :: C.CExpr -> St.State IEnv (A.Expression Pos)
 makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CGrOp  _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CLeqOp _ _ _) = interpretExpr cond
@@ -78,9 +103,10 @@ makeCond cond = do
   cond' <- interpretExpr cond
   return $ A.Binary A.NotEq cond' (A.IntLit 0)
 
-makeFunc :: String -> A.Args Pos -> Maybe (A.Expression Pos) -> Maybe (A.Type Pos) -> State IEnv (A.Declaration Pos)
+-- | Make ATS function.
+makeFunc :: String -> A.Args Pos -> Maybe (A.Expression Pos) -> Maybe (A.Type Pos) -> St.State IEnv (A.Declaration Pos)
 makeFunc fname args body ret = do
-  modify $ \s -> s { iEnvDeclFuns = Set.insert fname (iEnvDeclFuns s) }
+  iEnvRecordFun fname
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
@@ -92,12 +118,13 @@ makeFunc fname args body ret = do
                   , A._expression = body
                   })
 
-interpretExpr :: C.CExpr -> State IEnv (A.Expression Pos)
+-- | Convert C expression to ATS expression.
+interpretExpr :: C.CExpr -> St.State IEnv (A.Expression Pos)
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> return $ A.IntLit $ fromInteger $ C.getCInteger int
 interpretExpr (C.CVar ident _) = do
   let name = applyRenames ident
-  modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
+  iEnvRecordUsedVar name
   return $ A.NamedVal $ A.Unqualified name
 interpretExpr (C.CBinary op lhs rhs _) = do
   lhs' <- interpretExpr lhs
@@ -118,43 +145,45 @@ interpretExpr (C.CCall (C.CVar ident _) args _) = do
 interpretExpr expr =
   traceShow expr undefined
 
-interpretDeclarations :: C.CDecl -> State IEnv [A.Declaration Pos]
+-- | Convert C declaration to ATS declarations. C can multiple-define vars.
+interpretDeclarations :: C.CDecl -> St.State IEnv [A.Declaration Pos]
+interpretDeclarations (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
+  let fname = applyRenames ident
+  args <- interpretCDerivedDeclr derived
+  func <- makeFunc fname args Nothing (Just $ baseTypeOf specs)
+  return [func]
 interpretDeclarations (C.CDecl specs declrs _) =
   mapM go declrs
   where
-    go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> State IEnv (A.Declaration Pos)
+    go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> St.State IEnv (A.Declaration Pos)
     go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
-      modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s
-                       , iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
+      iEnvRecordDeclUsedVar name aType
       initi' <- mapM cInit initi
       return $ A.Var { A.varT = Just aType
                      , A.varPat = A.UniversalPattern dummyPos name [] Nothing
                      , A._varExpr1 = initi'
                      , A._varExpr2 = Nothing
                      }
-    cInit :: C.CInit -> State IEnv (A.Expression Pos)
+    cInit :: C.CInit -> St.State IEnv (A.Expression Pos)
     cInit (C.CInitExpr expr _) = interpretExpr expr
 
-interpretDeclarationsFunc :: C.CDecl -> State IEnv (A.Declaration Pos)
-interpretDeclarationsFunc (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
-  let fname = applyRenames ident
-  args <- interpretCDerivedDeclr derived
-  makeFunc fname args Nothing (Just $ baseTypeOf specs)
-
-interpretBlockItemDecl :: C.CBlockItem -> State IEnv [A.Declaration Pos]
+-- | Convert C block item to ATS declarations. C can multiple-define vars.
+interpretBlockItemDecl :: C.CBlockItem -> St.State IEnv [A.Declaration Pos]
 interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
 interpretBlockItemDecl (C.CBlockStmt statement) = do
   statement' <- interpretStatementDecl statement
   return [statement']
 
-interpretBlockItemExp :: C.CBlockItem -> State IEnv (A.Expression Pos)
+-- | Convert C block item to ATS expression.
+interpretBlockItemExp :: C.CBlockItem -> St.State IEnv (A.Expression Pos)
 interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatementExp statement
 
-interpretStatementDecl :: C.CStat -> State IEnv (A.Declaration Pos)
+-- | Convert C statement to ATS declaration.
+interpretStatementDecl :: C.CStat -> St.State IEnv (A.Declaration Pos)
 interpretStatementDecl (C.CExpr (Just expr) _) = do
   expr' <- interpretExpr expr
   return $ makeVal expr'
@@ -162,20 +191,22 @@ interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
   return $ makeVal cIf'
 interpretStatementDecl (C.CWhile cond stat False _) = do
-  let envCond = execState (interpretExpr cond) defaultIEnv
-  let envStat = execState (interpretStatementExp stat) defaultIEnv
+  -- Find used and pre-defined vars for args of recursion function
+  let envCond = St.execState (interpretExpr cond) defaultIEnv
+  let envStat = St.execState (interpretStatementExp stat) defaultIEnv
   let usedVars = Set.toList $ Set.union (iEnvUsedVars envCond) (iEnvUsedVars envStat)
-  s <- get
+  s <- St.get
   let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
   let args = iEnvDeclVarsArgs vars
   body <- interpretStatementExp stat
   -- xxx Should be unique function name "loop_while"
   makeFunc "loop_while" args (Just body) (Just (A.Tuple dummyPos $ fmap snd vars))
-  -- xxx call local function
+  -- xxx Call local function
 interpretStatementDecl stat =
   traceShow stat undefined
 
-interpretStatementExp :: C.CStat -> State IEnv (A.Expression Pos)
+-- | Convert C statement to ATS expression.
+interpretStatementExp :: C.CStat -> St.State IEnv (A.Expression Pos)
 interpretStatementExp (C.CCompound [] items _) = do
   -- xxx Find return with takeWhile like
   decls <- fmap concat $ mapM interpretBlockItemDecl $ init items
@@ -191,28 +222,30 @@ interpretStatementExp (C.CIf cond sthen selse _) = do
   selse' <- mapM interpretStatementExp selse
   return $ A.If cond' sthen' selse'
 
-interpretCDerivedDeclr :: C.CDerivedDeclr -> State IEnv (A.Args Pos)
+-- | Convert C derived declarator to ATS `Args`, and keep the vars in `IEnv`.
+interpretCDerivedDeclr :: C.CDerivedDeclr -> St.State IEnv (A.Args Pos)
 interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) = do
   args <- mapM go decls
   return $ Just args
   where
-    go :: C.CDecl -> State IEnv (A.Arg Pos)
+    go :: C.CDecl -> St.State IEnv (A.Arg Pos)
     go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
-      modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
-      modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
+      iEnvRecordDeclUsedVar name aType
       return $ A.Arg (A.Both name aType)
     go (C.CDecl specs [] _) =
       return $ A.Arg (A.Second (baseTypeOf specs))
 
-interpretFunction :: C.CFunDef -> State IEnv (A.Declaration Pos)
+-- | Convert C function definition to ATS declaration.
+interpretFunction :: C.CFunDef -> St.State IEnv (A.Declaration Pos)
 interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
   let fname = applyRenames ident
   args <- interpretCDerivedDeclr derived
-  s <- get
   body' <- interpretStatementExp body
+  s <- St.get
   if fname `Set.member` iEnvDeclFuns s then
+    -- Use `implement`, if the function already declared.
     return A.Impl { A.implArgs = Nothing
                   , A._impl = A.Implement
                       dummyPos -- pos
@@ -224,13 +257,18 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
                       (Right body') -- _iExpression
                   }
     else
+      -- Use `fun`, if the function not yet declared.
       makeFunc fname args (Just body') (Just $ baseTypeOf specs)
 
-perDecl :: C.CExtDecl -> State IEnv (A.Declaration Pos)
+-- | Convert C external C declaration to ATS declaration.
+perDecl :: C.CExtDecl -> St.State IEnv (A.Declaration Pos)
 perDecl (C.CFDefExt f) = interpretFunction f
-perDecl (C.CDeclExt d) =
-  A.Extern dummyPos <$> interpretDeclarationsFunc d
+perDecl (C.CDeclExt d) = do
+  d' <- interpretDeclarations d
+  return $ A.Extern dummyPos $ head d'
+-- xxx `perDecl` may return `State IEnv [A.Declaration Pos]`.
 
+-- | Inject AGPLv3 comment to every output. (So bad joke?)
 copyleftComment :: [String]
 copyleftComment =
   ["(*"
@@ -253,7 +291,7 @@ copyleftComment =
   ," *)"
   ,""]
 
--- | convert C tranlsation unit to ATS declarations.
+-- | Convert C tranlsation unit to ATS file.
 interpretTranslationUnit :: C.CTranslUnit -> A.ATS Pos
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
   A.ATS $ fmap A.Comment copyleftComment
@@ -263,4 +301,4 @@ interpretTranslationUnit (C.CTranslUnit cDecls _) =
               , A.qualName = Just "UN"
               , A.fileName = "\"prelude/SATS/unsafe.sats\""
               }
-     : evalState (mapM perDecl cDecls) defaultIEnv
+     : St.evalState (mapM perDecl cDecls) defaultIEnv
