@@ -47,12 +47,12 @@ iEnvDeclVarsCallArgs vars =
 -- | Convert `iEnvDeclVars` to ATS `TupleEx`.
 iEnvDeclVarsTupleEx :: [(String, A.Type Pos)] -> A.Expression Pos
 iEnvDeclVarsTupleEx vars =
-  A.TupleEx dummyPos $ Ne.fromList $ iEnvDeclVarsCallArgs vars
+  A.TupleEx dummyPos $ Ne.fromList $ reverse $ iEnvDeclVarsCallArgs vars
 
 -- | Convert `iEnvDeclVars` to ATS data type for pattern.
 iEnvDeclVarsTuplePat :: [(String, A.Type Pos)] -> A.Pattern Pos
 iEnvDeclVarsTuplePat vars =
-  A.TuplePattern $ fmap (\n -> A.UniversalPattern dummyPos n [] Nothing) $ fmap fst vars
+  A.TuplePattern ((\n -> A.UniversalPattern dummyPos n [] Nothing) <$> fmap fst vars)
 
 -- | Keep the function name in `IEnv`.
 iEnvRecordFun :: String -> St.State IEnv ()
@@ -69,6 +69,21 @@ iEnvRecordDeclUsedVar :: String -> A.Type Pos -> St.State IEnv ()
 iEnvRecordDeclUsedVar name aType = do
   St.modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
   iEnvRecordUsedVar name
+
+-- | Convert ATS `Args` to ATS `Var`s.
+atsArgsVars :: A.Args Pos -> [A.Declaration Pos]
+atsArgsVars args =
+  case args of Nothing -> []
+               Just [] -> []
+               Just args' -> fmap go args'
+  where
+    go :: A.Arg Pos -> A.Declaration Pos
+    go (A.Arg (A.Both name aType)) =
+      A.Var { A.varT = Just aType
+            , A.varPat = A.UniversalPattern dummyPos name [] Nothing
+            , A._varExpr1 = Just $ A.NamedVal $ A.Unqualified name
+            , A._varExpr2 = Nothing
+            }
 
 -- | Convert C binary operator to ATS expression.
 binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> St.State IEnv (A.Expression Pos)
@@ -125,8 +140,10 @@ makeCond cond = do
 -- | Make ATS function.
 makeFunc :: String -> A.Args Pos -> Maybe (A.Expression Pos) -> Maybe (A.Type Pos) -> St.State IEnv (A.Declaration Pos)
 makeFunc fname args body ret = do
-  -- xxx Should introduce `var` on args
   iEnvRecordFun fname
+  -- Introduce `var` on args
+  let body' = case body of Nothing -> Nothing
+                           b -> fmap (A.Let dummyPos (A.ATS $ atsArgsVars args)) (Just b)
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
@@ -135,13 +152,14 @@ makeFunc fname args body ret = do
                   , A.args = fmap reverse args
                   , A.returnType = ret
                   , A.termetric = Nothing
-                  , A._expression = body
+                  , A._expression = body'
                   })
 
 -- | Implement ATS function.
 makeImpl :: String -> A.Args Pos -> A.Expression Pos -> St.State IEnv (A.Declaration Pos)
-makeImpl fname args body =
-  -- xxx Should introduce `var` on args
+makeImpl fname args body = do
+  -- Introduce `var` on args
+  let body' = A.Let dummyPos (A.ATS $ atsArgsVars args) (Just body)
   return A.Impl { A.implArgs = Nothing
                 , A._impl = A.Implement
                     dummyPos -- pos
@@ -150,7 +168,7 @@ makeImpl fname args body =
                     [] -- universalsI
                     (A.Unqualified fname) -- nameI
                     (fmap reverse args) -- iArgs
-                    (Right body) -- _iExpression
+                    (Right body') -- _iExpression
                 }
 
 -- | Make ATS `Call`
