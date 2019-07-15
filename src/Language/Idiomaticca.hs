@@ -291,6 +291,41 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
                         (A.NamedVal $ A.Unqualified n)
                         (A.NamedVal $ A.Unqualified $ prefixI n)) <$> fmap fst vars
   return $ [func, callPat] ++ reAssign
+interpretStatementDecl (C.CFor (Left (Just initA)) (Just cond) (Just incr) stat _) = do
+  -- xxx Duplicated with `C.CWhile`
+  -- Find used and pre-defined vars for args of recursion function
+  let envInit = St.execState (interpretExpr initA) defaultIEnv
+  let envCond = St.execState (interpretExpr cond) defaultIEnv
+  let envIncr = St.execState (interpretExpr incr) defaultIEnv
+  let envStat = St.execState (interpretStatementExp stat) defaultIEnv
+  let usedVars = Set.toList $
+                   Set.union (iEnvUsedVars envInit) $
+                   Set.union (iEnvUsedVars envIncr) $
+                   Set.union  (iEnvUsedVars envCond)  (iEnvUsedVars envStat)
+  s <- St.get
+  let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
+  -- Make recursion function
+  decls <- interpretStatementDecl stat
+  let loopName = prefixI "loop_for" -- xxx Should be unique function name
+  let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
+  incr' <- interpretExpr incr
+  let body = A.Let dummyPos (A.ATS $ decls ++ [makeVal patVoid incr']) (Just callLoop)
+  cond' <- makeCond cond
+  let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
+  let args = iEnvDeclVarsArgs vars
+  func <- makeFunc loopName args (Just ifte)
+            (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
+  -- Initialize
+  initA' <- interpretExpr initA
+  let initA'' = makeVal patVoid initA'
+  -- Call the recursion function
+  let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (prefixI n,t)) vars
+  let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
+  -- Re-assign vars after call the recursion function
+  let reAssign = (\n -> makeVal patVoid $ A.Binary A.Mutate
+                        (A.NamedVal $ A.Unqualified n)
+                        (A.NamedVal $ A.Unqualified $ prefixI n)) <$> fmap fst vars
+  return $ [func, initA'', callPat] ++ reAssign
 interpretStatementDecl (C.CCompound [] items _) =
   concat <$> mapM interpretBlockItemDecl items
 interpretStatementDecl stat =
