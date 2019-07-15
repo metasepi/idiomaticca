@@ -108,6 +108,9 @@ applyRenames ident = case C.identToString ident of
 
 singleSpec :: C.CTypeSpec -> A.Type Pos
 singleSpec (C.CIntType _) = A.Named $ A.Unqualified "int"
+singleSpec (C.CCharType _) = A.Named $ A.Unqualified "char"
+singleSpec cType =
+  traceShow cType undefined
 
 -- | Convert C declaration specifiers and qualifiers to ATS type.
 baseTypeOf :: [C.CDeclSpec] -> A.Type Pos
@@ -185,6 +188,8 @@ makeCall fname args =
 interpretExpr :: C.CExpr -> St.State IEnv (A.Expression Pos)
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> return $ A.IntLit $ fromInteger $ C.getCInteger int
+  C.CCharConst (C.CChar char _) _ -> return $ A.CharLit char
+  _ -> traceShow c undefined
 interpretExpr (C.CVar ident _) = do
   let name = applyRenames ident
   iEnvRecordUsedVar name
@@ -262,7 +267,8 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   cond' <- makeCond cond
   let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
   let args = iEnvDeclVarsArgs vars
-  func <- makeFunc loopName args (Just ifte) (Just (A.Tuple dummyPos $ fmap snd vars))
+  func <- makeFunc loopName args (Just ifte)
+            (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
   -- Call the recursion function
   -- xxx Should be unique unique var name
   let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (n ++ "'",t)) vars
