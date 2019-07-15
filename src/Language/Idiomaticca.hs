@@ -289,10 +289,20 @@ interpretStatementDecl stat =
 -- | Convert C statement to ATS expression.
 interpretStatementExp :: C.CStat -> St.State IEnv (A.Expression Pos)
 interpretStatementExp (C.CCompound [] items _) = do
-  -- xxx Find return like takeWhile
-  decls <- fmap concat $ mapM interpretBlockItemDecl $ init items
-  exp <- interpretBlockItemExp $ last items
-  return $ A.Let dummyPos (A.ATS decls) (Just exp)
+  let items' = takeReturn items -- Items before return
+  let ret = pickReturn items -- A item may be return
+  decls <- concat <$> mapM interpretBlockItemDecl items'
+  exp <- mapM interpretBlockItemExp ret
+  return $ A.Let dummyPos (A.ATS decls) exp
+  where
+    takeReturn :: [C.CBlockItem] -> [C.CBlockItem]
+    takeReturn [] = []
+    takeReturn (i@(C.CBlockStmt C.CReturn{}):_) = []
+    takeReturn (i:is) = i:takeReturn is
+    pickReturn :: [C.CBlockItem] -> Maybe C.CBlockItem
+    pickReturn [] = Nothing
+    pickReturn (i@(C.CBlockStmt C.CReturn{}):_) = Just i
+    pickReturn (i:is) = pickReturn is
 interpretStatementExp (C.CReturn (Just expr) _) =
   interpretExpr expr
 interpretStatementExp (C.CExpr (Just expr) _) =
