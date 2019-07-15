@@ -256,7 +256,7 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
   -- Make recursion function
   decls <- interpretStatementDecl stat
-  let loopName = "loop_while" -- xxx Should be unique function name "loop_while"
+  let loopName = "loop_while" -- xxx Should be unique function name
   let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
   let body = A.Let dummyPos (A.ATS decls) (Just callLoop)
   cond' <- makeCond cond
@@ -264,10 +264,14 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   let args = iEnvDeclVarsArgs vars
   func <- makeFunc loopName args (Just ifte) (Just (A.Tuple dummyPos $ fmap snd vars))
   -- Call the recursion function
-  -- xxx Patten should primed such as`val (n', f1', f0') =`
-  let callPat = makeVal (Just $ iEnvDeclVarsTuplePat vars) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
-  -- xxx Assign new vars such as `val () = n := n'`
-  return [func, callPat]
+  -- xxx Should be unique unique var name
+  let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (n ++ "'",t)) vars
+  let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
+  -- Re-assign vars after call the recursion function
+  let reAssign = (\n -> makeVal patVoid $ A.Binary A.Mutate
+                        (A.NamedVal $ A.Unqualified n)
+                        (A.NamedVal $ A.Unqualified $ n ++ "'")) <$> fmap fst vars
+  return $ [func, callPat] ++ reAssign
 interpretStatementDecl (C.CCompound [] items _) =
   concat <$> mapM interpretBlockItemDecl items
 interpretStatementDecl stat =
