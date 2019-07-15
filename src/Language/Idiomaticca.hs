@@ -284,7 +284,6 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
   func <- makeFunc loopName args (Just ifte)
             (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
   -- Call the recursion function
-  -- xxx Should be unique var name
   let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (prefixI n,t)) vars
   let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
   -- Re-assign vars after call the recursion function
