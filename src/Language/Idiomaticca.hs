@@ -12,6 +12,7 @@ import qualified Data.List.NonEmpty as Ne
 import qualified Language.ATS as A
 import qualified Language.C as C
 
+-- | Prefix name for internal usage
 prefixI :: String -> String
 prefixI name = "i9a_" ++ name
 
@@ -101,6 +102,7 @@ binop op lhs rhs =
                        C.CGeqOp -> A.GreaterThanEq
                        C.CEqOp  -> A.StaticEq
                        C.CNeqOp -> A.NotEq
+                       o -> traceShow o undefined
   in return $ A.Binary op' lhs rhs
 
 -- | Some names are special in C or special in ATS, or both.
@@ -119,6 +121,12 @@ singleSpec cType =
 baseTypeOf :: [C.CDeclSpec] -> A.Type Pos
 baseTypeOf (C.CStorageSpec _:ss) = baseTypeOf ss
 baseTypeOf [C.CTypeSpec spec] = singleSpec spec
+baseTypeOf specs =
+  traceShow specs undefined
+
+-- | Void pattern for ATS `Val`.
+patVoid :: Maybe (A.Pattern Pos)
+patVoid = Just (A.PLiteral (A.VoidLiteral dummyPos))
 
 -- | Make ATS `Val`.
 makeVal :: Maybe (A.Pattern Pos) -> A.Expression Pos -> A.Declaration Pos
@@ -127,9 +135,6 @@ makeVal pat aExpr = A.Val { A.add = A.None
                           , A.valPat = pat
                           , A._valExpression = Just aExpr
                           }
-
-patVoid :: Maybe (A.Pattern Pos)
-patVoid = Just (A.PLiteral (A.VoidLiteral dummyPos))
 
 -- | Make ATS condition, which is used by `if`. It needs boolean value.
 makeCond :: C.CExpr -> St.State IEnv (A.Expression Pos)
@@ -234,6 +239,8 @@ interpretDeclarations (C.CDecl specs declrs _) =
                      }
     cInit :: C.CInit -> St.State IEnv (A.Expression Pos)
     cInit (C.CInitExpr expr _) = interpretExpr expr
+interpretDeclarations cDecl =
+  traceShow cDecl undefined
 
 -- | Convert C block item to ATS declarations. C can multiple-define vars.
 interpretBlockItemDecl :: C.CBlockItem -> St.State IEnv [A.Declaration Pos]
@@ -241,11 +248,15 @@ interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
 interpretBlockItemDecl (C.CBlockStmt statement) =
   interpretStatementDecl statement
+interpretBlockItemDecl bItem =
+  traceShow bItem undefined
 
 -- | Convert C block item to ATS expression.
 interpretBlockItemExp :: C.CBlockItem -> St.State IEnv (A.Expression Pos)
 interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatementExp statement
+interpretBlockItemExp bItem =
+  traceShow bItem undefined
 
 -- | Convert C statement to ATS declaration.
 interpretStatementDecl :: C.CStat -> St.State IEnv [A.Declaration Pos]
@@ -312,6 +323,8 @@ interpretStatementExp (C.CIf cond sthen selse _) = do
   sthen' <- interpretStatementExp sthen
   selse' <- mapM interpretStatementExp selse
   return $ A.If cond' sthen' selse'
+interpretStatementExp stat =
+  traceShow stat undefined
 
 -- | Convert C derived declarator to ATS `Args`, and keep the vars in `IEnv`.
 interpretCDerivedDeclr :: C.CDerivedDeclr -> St.State IEnv (A.Args Pos)
@@ -327,6 +340,8 @@ interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) = do
       return $ A.Arg (A.Both name aType)
     go (C.CDecl specs [] _) =
       return $ A.Arg (A.Second (baseTypeOf specs))
+interpretCDerivedDeclr dDeclr =
+  traceShow dDeclr undefined
 
 -- | Convert C function definition to ATS declaration.
 interpretFunction :: C.CFunDef -> St.State IEnv (A.Declaration Pos)
@@ -341,6 +356,8 @@ interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ bod
     else
       -- Use `fun`, if the function not yet declared.
       makeFunc fname args (Just body') (Just $ baseTypeOf specs)
+interpretFunction funDef =
+  traceShow funDef undefined
 
 -- | Convert C external C declaration to ATS declaration.
 perDecl :: C.CExtDecl -> St.State IEnv (A.Declaration Pos)
@@ -348,6 +365,8 @@ perDecl (C.CFDefExt f) = interpretFunction f
 perDecl (C.CDeclExt d) = do
   d' <- interpretDeclarations d
   return $ A.Extern dummyPos $ head d'
+perDecl eDecl =
+  traceShow eDecl undefined
 -- xxx `perDecl` may return `State IEnv [A.Declaration Pos]`.
 
 -- | Inject AGPLv3 comment to every output. (So bad joke?)
