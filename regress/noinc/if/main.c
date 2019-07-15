@@ -4,9 +4,9 @@ int main() {
 	if (r - 3) {
 		r = 1;
 		r = 10;
-	} else if (r > 10) {
+	} else if (r > 10)
 		r = 20;
-	} else {
+	else {
 		r = 30;
 	}
 
