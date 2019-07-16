@@ -74,6 +74,16 @@ iEnvRecordDeclUsedVar name aType = do
   St.modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
   iEnvRecordUsedVar name
 
+-- | Find used and pre-defined vars for args of recursion function
+usedTypedVars :: [C.CExpr] -> [C.CStat] -> St.State IEnv [(String, A.Type Pos)]
+usedTypedVars exprs stats = do
+  let envExprs = fmap (\e -> St.execState (interpretExpr e) defaultIEnv) exprs
+  let envStats = fmap (\s -> St.execState (interpretStatementExp s) defaultIEnv) stats
+  let usedVars = fmap iEnvUsedVars $ envExprs ++ envStats
+  let usedVars' = Set.toList $ foldr Set.union Set.empty $ usedVars
+  s <- St.get
+  return $ mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars'
+
 -- | Convert ATS `Args` to ATS `Var`s.
 atsArgsVars :: A.Args Pos -> [A.Declaration Pos]
 atsArgsVars args =
@@ -267,12 +277,7 @@ interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
   return [makeVal patVoid cIf']
 interpretStatementDecl (C.CWhile cond stat False _) = do
-  -- Find used and pre-defined vars for args of recursion function
-  let envCond = St.execState (interpretExpr cond) defaultIEnv
-  let envStat = St.execState (interpretStatementExp stat) defaultIEnv
-  let usedVars = Set.toList $ Set.union (iEnvUsedVars envCond) (iEnvUsedVars envStat)
-  s <- St.get
-  let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
+  vars <- usedTypedVars [cond] [stat]
   -- Make recursion function
   decls <- interpretStatementDecl stat
   let loopName = prefixI "loop_while" -- xxx Should be unique function name
@@ -292,18 +297,8 @@ interpretStatementDecl (C.CWhile cond stat False _) = do
                         (A.NamedVal $ A.Unqualified $ prefixI n)) <$> fmap fst vars
   return $ [func, callPat] ++ reAssign
 interpretStatementDecl (C.CFor (Left (Just initA)) (Just cond) (Just incr) stat _) = do
+  vars <- usedTypedVars [initA, cond, incr] [stat]
   -- xxx Duplicated with `C.CWhile`
-  -- Find used and pre-defined vars for args of recursion function
-  let envInit = St.execState (interpretExpr initA) defaultIEnv
-  let envCond = St.execState (interpretExpr cond) defaultIEnv
-  let envIncr = St.execState (interpretExpr incr) defaultIEnv
-  let envStat = St.execState (interpretStatementExp stat) defaultIEnv
-  let usedVars = Set.toList $
-                   Set.union (iEnvUsedVars envInit) $
-                   Set.union (iEnvUsedVars envIncr) $
-                   Set.union  (iEnvUsedVars envCond)  (iEnvUsedVars envStat)
-  s <- St.get
-  let vars = mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars
   -- Make recursion function
   decls <- interpretStatementDecl stat
   let loopName = prefixI "loop_for" -- xxx Should be unique function name
