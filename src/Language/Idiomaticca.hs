@@ -202,6 +202,34 @@ makeCall fname args =
          , A.callArgs = reverse args
          }
 
+-- | Make `while` or `for` loop using a recursion function
+makeLoop :: String -> Either (Maybe C.CExpr) C.CDecl -> Maybe C.CExpr -> Maybe C.CExpr -> C.CStat -> St.State IEnv [A.Declaration Pos]
+makeLoop nameBase (Left initA) cond incr stat = do
+  vars <- usedTypedVars (catMaybes [initA, cond, incr]) [stat]
+  -- Make recursion function
+  decls <- interpretStatementDecl stat
+  let loopName = nameBase -- xxx Should be unique function name
+  let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
+  incr' <- mapM interpretExpr incr
+  let body = A.Let dummyPos
+        (A.ATS $ decls ++ fmap (makeVal patVoid) (maybeToList incr')) (Just callLoop)
+  cond' <- makeCond $ fromJust cond
+  let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
+  let args = iEnvDeclVarsArgs vars
+  func <- makeFunc loopName args (Just ifte)
+            (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
+  -- Initialize
+  initA' <- mapM interpretExpr initA
+  let initA'' = fmap (makeVal patVoid) (maybeToList initA')
+  -- Call the recursion function
+  let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (prefixI n,t)) vars
+  let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
+  -- Re-assign vars after call the recursion function
+  let reAssign = (\n -> makeVal patVoid $ A.Binary A.Mutate
+                        (A.NamedVal $ A.Unqualified n)
+                        (A.NamedVal $ A.Unqualified $ prefixI n)) <$> fmap fst vars
+  return $ [func] ++ initA'' ++ [callPat] ++ reAssign
+
 -- | Convert C expression to ATS expression.
 interpretExpr :: C.CExpr -> St.State IEnv (A.Expression Pos)
 interpretExpr (C.CConst c) = case c of
@@ -276,51 +304,10 @@ interpretStatementDecl (C.CExpr (Just expr) _) = do
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
   return [makeVal patVoid cIf']
-interpretStatementDecl (C.CWhile cond stat False _) = do
-  vars <- usedTypedVars [cond] [stat]
-  -- Make recursion function
-  decls <- interpretStatementDecl stat
-  let loopName = prefixI "loop_while" -- xxx Should be unique function name
-  let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
-  let body = A.Let dummyPos (A.ATS decls) (Just callLoop)
-  cond' <- makeCond cond
-  let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
-  let args = iEnvDeclVarsArgs vars
-  func <- makeFunc loopName args (Just ifte)
-            (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
-  -- Call the recursion function
-  let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (prefixI n,t)) vars
-  let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
-  -- Re-assign vars after call the recursion function
-  let reAssign = (\n -> makeVal patVoid $ A.Binary A.Mutate
-                        (A.NamedVal $ A.Unqualified n)
-                        (A.NamedVal $ A.Unqualified $ prefixI n)) <$> fmap fst vars
-  return $ [func, callPat] ++ reAssign
-interpretStatementDecl (C.CFor (Left (Just initA)) (Just cond) (Just incr) stat _) = do
-  vars <- usedTypedVars [initA, cond, incr] [stat]
-  -- xxx Duplicated with `C.CWhile`
-  -- Make recursion function
-  decls <- interpretStatementDecl stat
-  let loopName = prefixI "loop_for" -- xxx Should be unique function name
-  let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
-  incr' <- interpretExpr incr
-  let body = A.Let dummyPos (A.ATS $ decls ++ [makeVal patVoid incr']) (Just callLoop)
-  cond' <- makeCond cond
-  let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
-  let args = iEnvDeclVarsArgs vars
-  func <- makeFunc loopName args (Just ifte)
-            (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
-  -- Initialize
-  initA' <- interpretExpr initA
-  let initA'' = makeVal patVoid initA'
-  -- Call the recursion function
-  let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (prefixI n,t)) vars
-  let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
-  -- Re-assign vars after call the recursion function
-  let reAssign = (\n -> makeVal patVoid $ A.Binary A.Mutate
-                        (A.NamedVal $ A.Unqualified n)
-                        (A.NamedVal $ A.Unqualified $ prefixI n)) <$> fmap fst vars
-  return $ [func, initA'', callPat] ++ reAssign
+interpretStatementDecl (C.CWhile cond stat False _) =
+  makeLoop "loop_while" (Left Nothing) (Just cond) Nothing stat
+interpretStatementDecl (C.CFor initA cond incr stat _) =
+  makeLoop "loop_for" initA cond incr stat
 interpretStatementDecl (C.CCompound [] items _) =
   concat <$> mapM interpretBlockItemDecl items
 interpretStatementDecl stat =
