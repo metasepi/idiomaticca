@@ -12,18 +12,26 @@ import qualified Data.List.NonEmpty as Ne
 import qualified Language.ATS as A
 import qualified Language.C as C
 
--- | Prefix name for internal usage
-prefixI :: String -> String
-prefixI name = "i9a_" ++ name
-
 type Pos = A.AlexPosn
 
 dummyPos :: Pos
 dummyPos = A.AlexPn 0 0 0
 
+type AAts = A.ATS Pos
+type ADecl = A.Declaration Pos
+type AExpr = A.Expression Pos
+type AType = A.Type Pos
+type AArgs = A.Args Pos
+type AArg = A.Arg Pos
+type APat = A.Pattern Pos
+
+-- | Prefix name for internal usage
+prefixI :: String -> String
+prefixI name = "i9a_" ++ name
+
 -- | State to keep defined Functions and Vars.
 data IEnv = IEnv { iEnvDeclFuns :: Set.Set String -- declared function names
-                 , iEnvDeclVars :: [(String, A.Type Pos)] -- defined var names and types
+                 , iEnvDeclVars :: [(String, AType)] -- defined var names and types
                  , iEnvUsedVars :: Set.Set String -- used var names
                  }
   deriving (Show)
@@ -36,25 +44,25 @@ defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
                    }
 
 -- | Convert `iEnvDeclVars` to ATS `Args`.
-iEnvDeclVarsArgs :: [(String, A.Type Pos)] -> A.Args Pos
+iEnvDeclVarsArgs :: [(String, AType)] -> AArgs
 iEnvDeclVarsArgs vars =
   Just $ fmap go vars
   where
-    go :: (String, A.Type Pos) -> A.Arg Pos
+    go :: (String, AType) -> AArg
     go (name, aType) = A.Arg $ A.Both name aType
 
 -- | Convert `iEnvDeclVars` to ATS expression for `callArgs`.
-iEnvDeclVarsCallArgs :: [(String, A.Type Pos)] -> [A.Expression Pos]
+iEnvDeclVarsCallArgs :: [(String, AType)] -> [AExpr]
 iEnvDeclVarsCallArgs vars =
   A.NamedVal . A.Unqualified <$> fmap fst vars
 
 -- | Convert `iEnvDeclVars` to ATS `TupleEx`.
-iEnvDeclVarsTupleEx :: [(String, A.Type Pos)] -> A.Expression Pos
+iEnvDeclVarsTupleEx :: [(String, AType)] -> AExpr
 iEnvDeclVarsTupleEx vars =
   A.TupleEx dummyPos $ Ne.fromList $ reverse $ iEnvDeclVarsCallArgs vars
 
 -- | Convert `iEnvDeclVars` to ATS data type for pattern.
-iEnvDeclVarsTuplePat :: [(String, A.Type Pos)] -> A.Pattern Pos
+iEnvDeclVarsTuplePat :: [(String, AType)] -> APat
 iEnvDeclVarsTuplePat vars =
   A.TuplePattern ((\n -> A.UniversalPattern dummyPos n [] Nothing) <$> fmap fst vars)
 
@@ -69,13 +77,13 @@ iEnvRecordUsedVar name =
   St.modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
 
 -- | Declare and use the var, and record `IEnv`.
-iEnvRecordDeclUsedVar :: String -> A.Type Pos -> St.State IEnv ()
+iEnvRecordDeclUsedVar :: String -> AType -> St.State IEnv ()
 iEnvRecordDeclUsedVar name aType = do
   St.modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
   iEnvRecordUsedVar name
 
 -- | Find used and pre-defined vars for args of recursion function
-usedTypedVars :: [C.CExpr] -> [C.CStat] -> St.State IEnv [(String, A.Type Pos)]
+usedTypedVars :: [C.CExpr] -> [C.CStat] -> St.State IEnv [(String, AType)]
 usedTypedVars exprs stats = do
   let envExprs = fmap (\e -> St.execState (interpretExpr e) defaultIEnv) exprs
   let envStats = fmap (\s -> St.execState (interpretStatementExp s) defaultIEnv) stats
@@ -85,13 +93,13 @@ usedTypedVars exprs stats = do
   return $ mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars'
 
 -- | Convert ATS `Args` to ATS `Var`s.
-atsArgsVars :: A.Args Pos -> [A.Declaration Pos]
+atsArgsVars :: AArgs -> [ADecl]
 atsArgsVars args =
   case args of Nothing -> []
                Just [] -> []
                Just args' -> fmap go args'
   where
-    go :: A.Arg Pos -> A.Declaration Pos
+    go :: AArg -> ADecl
     go (A.Arg (A.Both name aType)) =
       A.Var { A.varT = Just aType
             , A.varPat = A.UniversalPattern dummyPos name [] Nothing
@@ -100,7 +108,7 @@ atsArgsVars args =
             }
 
 -- | Convert C binary operator to ATS expression.
-binop :: C.CBinaryOp -> A.Expression Pos -> A.Expression Pos -> St.State IEnv (A.Expression Pos)
+binop :: C.CBinaryOp -> AExpr -> AExpr -> St.State IEnv AExpr
 binop op lhs rhs =
   let op' = case op of C.CMulOp -> A.Mult
                        C.CDivOp -> A.Div
@@ -121,25 +129,25 @@ applyRenames ident = case C.identToString ident of
   name -> name
 -- | xxx Get the rename rule.
 
-singleSpec :: C.CTypeSpec -> A.Type Pos
+singleSpec :: C.CTypeSpec -> AType
 singleSpec (C.CIntType _) = A.Named $ A.Unqualified "int"
 singleSpec (C.CCharType _) = A.Named $ A.Unqualified "char"
 singleSpec cType =
   traceShow cType undefined
 
 -- | Convert C declaration specifiers and qualifiers to ATS type.
-baseTypeOf :: [C.CDeclSpec] -> A.Type Pos
+baseTypeOf :: [C.CDeclSpec] -> AType
 baseTypeOf (C.CStorageSpec _:ss) = baseTypeOf ss
 baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 baseTypeOf specs =
   traceShow specs undefined
 
 -- | Void pattern for ATS `Val`.
-patVoid :: Maybe (A.Pattern Pos)
+patVoid :: Maybe APat
 patVoid = Just (A.PLiteral (A.VoidLiteral dummyPos))
 
 -- | Make ATS `Val`.
-makeVal :: Maybe (A.Pattern Pos) -> A.Expression Pos -> A.Declaration Pos
+makeVal :: Maybe APat -> AExpr -> ADecl
 makeVal pat aExpr = A.Val { A.add = A.None
                           , A.valT = Nothing
                           , A.valPat = pat
@@ -147,7 +155,7 @@ makeVal pat aExpr = A.Val { A.add = A.None
                           }
 
 -- | Make ATS condition, which is used by `if`. It needs boolean value.
-makeCond :: C.CExpr -> St.State IEnv (A.Expression Pos)
+makeCond :: C.CExpr -> St.State IEnv AExpr
 makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CGrOp  _ _ _) = interpretExpr cond
 makeCond cond@(C.CBinary C.CLeqOp _ _ _) = interpretExpr cond
@@ -159,7 +167,7 @@ makeCond cond = do
   return $ A.Binary A.NotEq cond' (A.IntLit 0)
 
 -- | Make ATS function.
-makeFunc :: String -> A.Args Pos -> Maybe (A.Expression Pos) -> Maybe (A.Type Pos) -> St.State IEnv (A.Declaration Pos)
+makeFunc :: String -> AArgs -> Maybe AExpr -> Maybe AType -> St.State IEnv ADecl
 makeFunc fname args body ret = do
   iEnvRecordFun fname
   -- Introduce `var` on args
@@ -177,7 +185,7 @@ makeFunc fname args body ret = do
                   })
 
 -- | Implement ATS function.
-makeImpl :: String -> A.Args Pos -> A.Expression Pos -> St.State IEnv (A.Declaration Pos)
+makeImpl :: String -> AArgs -> AExpr -> St.State IEnv ADecl
 makeImpl fname args body = do
   -- Introduce `var` on args
   let body' = A.Let dummyPos (A.ATS $ atsArgsVars args) (Just body)
@@ -193,7 +201,7 @@ makeImpl fname args body = do
                 }
 
 -- | Make ATS `Call`
-makeCall :: String -> [A.Expression Pos] -> A.Expression Pos
+makeCall :: String -> [AExpr] -> AExpr
 makeCall fname args =
   A.Call { A.callName = A.Unqualified fname
          , A.callImplicits = []
@@ -203,7 +211,7 @@ makeCall fname args =
          }
 
 -- | Make `while` or `for` loop using a recursion function
-makeLoop :: String -> Either (Maybe C.CExpr) C.CDecl -> Maybe C.CExpr -> Maybe C.CExpr -> C.CStat -> St.State IEnv [A.Declaration Pos]
+makeLoop :: String -> Either (Maybe C.CExpr) C.CDecl -> Maybe C.CExpr -> Maybe C.CExpr -> C.CStat -> St.State IEnv [ADecl]
 makeLoop nameBase (Left initA) cond incr stat = do
   vars <- usedTypedVars (catMaybes [initA, cond, incr]) [stat]
   -- Make recursion function
@@ -231,7 +239,7 @@ makeLoop nameBase (Left initA) cond incr stat = do
   return $ [func] ++ initA'' ++ [callPat] ++ reAssign
 
 -- | Convert C expression to ATS expression.
-interpretExpr :: C.CExpr -> St.State IEnv (A.Expression Pos)
+interpretExpr :: C.CExpr -> St.State IEnv AExpr
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> return $ A.IntLit $ fromInteger $ C.getCInteger int
   C.CCharConst (C.CChar char _) _ -> return $ A.CharLit char
@@ -255,7 +263,7 @@ interpretExpr expr =
   traceShow expr undefined
 
 -- | Convert C declaration to ATS declarations. C can multiple-define vars.
-interpretDeclarations :: C.CDecl -> St.State IEnv [A.Declaration Pos]
+interpretDeclarations :: C.CDecl -> St.State IEnv [ADecl]
 interpretDeclarations (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
   args <- interpretCDerivedDeclr derived
@@ -264,7 +272,7 @@ interpretDeclarations (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _
 interpretDeclarations (C.CDecl specs declrs _) =
   mapM go declrs
   where
-    go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> St.State IEnv (A.Declaration Pos)
+    go :: (Maybe C.CDeclr, Maybe C.CInit, Maybe C.CExpr) -> St.State IEnv ADecl
     go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
@@ -275,13 +283,13 @@ interpretDeclarations (C.CDecl specs declrs _) =
                      , A._varExpr1 = initi'
                      , A._varExpr2 = Nothing
                      }
-    cInit :: C.CInit -> St.State IEnv (A.Expression Pos)
+    cInit :: C.CInit -> St.State IEnv AExpr
     cInit (C.CInitExpr expr _) = interpretExpr expr
 interpretDeclarations cDecl =
   traceShow cDecl undefined
 
 -- | Convert C block item to ATS declarations. C can multiple-define vars.
-interpretBlockItemDecl :: C.CBlockItem -> St.State IEnv [A.Declaration Pos]
+interpretBlockItemDecl :: C.CBlockItem -> St.State IEnv [ADecl]
 interpretBlockItemDecl (C.CBlockDecl decl) =
   interpretDeclarations decl
 interpretBlockItemDecl (C.CBlockStmt statement) =
@@ -290,14 +298,14 @@ interpretBlockItemDecl bItem =
   traceShow bItem undefined
 
 -- | Convert C block item to ATS expression.
-interpretBlockItemExp :: C.CBlockItem -> St.State IEnv (A.Expression Pos)
+interpretBlockItemExp :: C.CBlockItem -> St.State IEnv AExpr
 interpretBlockItemExp (C.CBlockStmt statement) =
   interpretStatementExp statement
 interpretBlockItemExp bItem =
   traceShow bItem undefined
 
 -- | Convert C statement to ATS declaration.
-interpretStatementDecl :: C.CStat -> St.State IEnv [A.Declaration Pos]
+interpretStatementDecl :: C.CStat -> St.State IEnv [ADecl]
 interpretStatementDecl (C.CExpr (Just expr) _) = do
   expr' <- interpretExpr expr
   return [makeVal patVoid expr']
@@ -314,7 +322,7 @@ interpretStatementDecl stat =
   traceShow stat undefined
 
 -- | Convert C statement to ATS expression.
-interpretStatementExp :: C.CStat -> St.State IEnv (A.Expression Pos)
+interpretStatementExp :: C.CStat -> St.State IEnv AExpr
 interpretStatementExp (C.CCompound [] items _) = do
   let items' = takeReturn items -- Items before return
   let ret = pickReturn items -- A item may be return
@@ -343,12 +351,12 @@ interpretStatementExp stat =
   traceShow stat undefined
 
 -- | Convert C derived declarator to ATS `Args`, and keep the vars in `IEnv`.
-interpretCDerivedDeclr :: C.CDerivedDeclr -> St.State IEnv (A.Args Pos)
+interpretCDerivedDeclr :: C.CDerivedDeclr -> St.State IEnv AArgs
 interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) = do
   args <- mapM go decls
   return $ Just args
   where
-    go :: C.CDecl -> St.State IEnv (A.Arg Pos)
+    go :: C.CDecl -> St.State IEnv AArg
     go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
@@ -360,7 +368,7 @@ interpretCDerivedDeclr dDeclr =
   traceShow dDeclr undefined
 
 -- | Convert C function definition to ATS declaration.
-interpretFunction :: C.CFunDef -> St.State IEnv (A.Declaration Pos)
+interpretFunction :: C.CFunDef -> St.State IEnv ADecl
 interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
   let fname = applyRenames ident
   args <- interpretCDerivedDeclr derived
@@ -376,14 +384,14 @@ interpretFunction funDef =
   traceShow funDef undefined
 
 -- | Convert C external C declaration to ATS declaration.
-perDecl :: C.CExtDecl -> St.State IEnv (A.Declaration Pos)
+perDecl :: C.CExtDecl -> St.State IEnv ADecl
 perDecl (C.CFDefExt f) = interpretFunction f
 perDecl (C.CDeclExt d) = do
   d' <- interpretDeclarations d
   return $ A.Extern dummyPos $ head d'
 perDecl eDecl =
   traceShow eDecl undefined
--- xxx `perDecl` may return `State IEnv [A.Declaration Pos]`.
+-- xxx `perDecl` may return `State IEnv [ADecl]`.
 
 -- | Inject AGPLv3 comment to every output. (So bad joke?)
 copyleftComment :: [String]
@@ -409,7 +417,7 @@ copyleftComment =
   ,""]
 
 -- | Convert C tranlsation unit to ATS file.
-interpretTranslationUnit :: C.CTranslUnit -> A.ATS Pos
+interpretTranslationUnit :: C.CTranslUnit -> AAts
 interpretTranslationUnit (C.CTranslUnit cDecls _) =
   A.ATS $ fmap A.Comment copyleftComment
     ++ A.Include "\"share/atspre_staload.hats\""
