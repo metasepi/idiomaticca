@@ -5,3 +5,6 @@ extra-deps:
 - composition-prelude-2.0.5.0
 - language-ats-1.7.1.2
 - recursion-2.2.3.0
+build:
+  library-profiling: true
+  executable-profiling: true
