@@ -198,13 +198,25 @@ makeCond cond = do
              (C.CBinary C.CNeqOp _ _ _) -> cond'
              _ -> (preD, A.Binary A.NotEq justE (A.IntLit 0), postD)
 
+-- | Make args for function.
+makeArgs :: AArgs -> Maybe AExpr -> Maybe AExpr
+makeArgs args body =
+  case body of
+    Nothing -> Nothing
+    b -> if nullArgs args then body
+         else fmap (A.Let dummyPos (A.ATS $ atsArgsVars args)) (Just b)
+  where
+    nullArgs :: AArgs -> Bool
+    nullArgs Nothing = True
+    nullArgs (Just []) = True
+    nullArgs _ = False
+
 -- | Make ATS function.
 makeFunc :: String -> AArgs -> Maybe AExpr -> Maybe AType -> St.State IEnv ADecl
 makeFunc fname args body ret = do
   iEnvRecordFun fname
   -- Introduce `var` on args
-  let body' = case body of Nothing -> Nothing
-                           b -> fmap (A.Let dummyPos (A.ATS $ atsArgsVars args)) (Just b)
+  let body' = makeArgs args body
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
@@ -220,7 +232,7 @@ makeFunc fname args body ret = do
 makeImpl :: String -> AArgs -> AExpr -> St.State IEnv ADecl
 makeImpl fname args body = do
   -- Introduce `var` on args
-  let body' = A.Let dummyPos (A.ATS $ atsArgsVars args) (Just body)
+  let (Just body') = makeArgs args (Just body)
   return A.Impl { A.implArgs = Nothing
                 , A._impl = A.Implement
                     dummyPos -- pos
