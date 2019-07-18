@@ -31,7 +31,9 @@ justE e = traceShow e undefined
 
 catPreJustPost :: ([ADecl], AExpr, [ADecl]) -> [ADecl]
 catPreJustPost (preD, justE, postD) =
-  preD ++ [makeVal (Just (A.PName (A.Unqualified "_") [])) justE] ++ postD
+  case justE of
+    (A.Binary A.Mutate _ _) -> preD ++ [makeVal patVoid justE] ++ postD
+    _ -> preD ++ postD
 
 -- | Prefix name for internal usage
 prefixI :: String -> String
