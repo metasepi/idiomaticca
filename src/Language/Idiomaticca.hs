@@ -366,7 +366,8 @@ interpretStatementExp (C.CCompound [] items _) = do
   let ret = pickReturn items -- A item may be return
   decls <- concat <$> mapM interpretBlockItemDecl items'
   exp <- mapM interpretBlockItemExp ret
-  return $ A.Let dummyPos (A.ATS decls) exp
+  return $ if null decls && isJust exp then fromJust exp
+           else A.Let dummyPos (A.ATS decls) exp
   where
     takeReturn :: [C.CBlockItem] -> [C.CBlockItem]
     takeReturn [] = []
