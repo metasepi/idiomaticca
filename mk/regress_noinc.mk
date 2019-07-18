@@ -4,7 +4,7 @@ test_prog: main.dats
 	patscc -o $@ $< -DATS_MEMALLOC_LIBC
 
 main.dats: main.c
-	stack run trans $< > $@
+	stack exec -- idiomaticca +RTS -xc --RTS trans $< > $@
 
 test: all
 	./test_prog

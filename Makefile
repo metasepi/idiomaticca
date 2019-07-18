@@ -2,7 +2,7 @@ SUBDIRS := regress
 HSSRC := `find app/ src/ test/ -name "*.hs"`
 
 all:
-	stack build
+	stack build --profile
 
 setup:
 	stack --no-terminal --install-ghc test --only-dependencies
