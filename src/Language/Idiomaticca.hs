@@ -25,6 +25,14 @@ type AArgs = A.Args Pos
 type AArg = A.Arg Pos
 type APat = A.Pattern Pos
 
+justE :: Show a => Show b => ([a], b, [a]) -> b
+justE ([], r, []) = r
+justE e = traceShow e undefined
+
+catPreJustPost :: ([ADecl], AExpr, [ADecl]) -> [ADecl]
+catPreJustPost (preD, justE, postD) =
+  preD ++ [makeVal (Just (A.PName (A.Unqualified "_") [])) justE] ++ postD
+
 -- | Prefix name for internal usage
 prefixI :: String -> String
 prefixI name = "i9a_" ++ name
@@ -88,7 +96,7 @@ usedTypedVars exprs stats = do
   let envExprs = fmap (\e -> St.execState (interpretExpr e) defaultIEnv) exprs
   let envStats = fmap (\s -> St.execState (interpretStatementExp s) defaultIEnv) stats
   let usedVars = fmap iEnvUsedVars $ envExprs ++ envStats
-  let usedVars' = Set.toList $ foldr Set.union Set.empty $ usedVars
+  let usedVars' = Set.toList $ foldr Set.union Set.empty usedVars
   s <- St.get
   return $ mapMaybe (\u -> (,) u <$> lookup u (iEnvDeclVars s)) usedVars'
 
@@ -106,6 +114,18 @@ atsArgsVars args =
             , A._varExpr1 = Just $ A.NamedVal $ A.Unqualified name
             , A._varExpr2 = Nothing
             }
+
+-- | Convert C unary to ATS expression with
+unop :: C.CUnaryOp -> C.CExpr -> St.State IEnv ([ADecl], AExpr, [ADecl])
+unop op expr = do
+  expr' <- justE <$> interpretExpr expr
+  return $ case op of
+    C.CPreIncOp -> undefined
+    C.CPreDecOp -> undefined
+    C.CPostIncOp ->
+      ([], expr',
+       [makeVal patVoid $ A.Binary A.Mutate expr' $ A.Binary A.Add expr' (A.IntLit 1)])
+    C.CPostDecOp -> undefined
 
 -- | Convert C binary operator to ATS expression.
 binop :: C.CBinaryOp -> AExpr -> AExpr -> St.State IEnv AExpr
@@ -156,15 +176,16 @@ makeVal pat aExpr = A.Val { A.add = A.None
 
 -- | Make ATS condition, which is used by `if`. It needs boolean value.
 makeCond :: C.CExpr -> St.State IEnv AExpr
-makeCond cond@(C.CBinary C.CLeOp  _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CGrOp  _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CLeqOp _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CGeqOp _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CEqOp  _ _ _) = interpretExpr cond
-makeCond cond@(C.CBinary C.CNeqOp _ _ _) = interpretExpr cond
 makeCond cond = do
-  cond' <- interpretExpr cond
-  return $ A.Binary A.NotEq cond' (A.IntLit 0)
+  cond' <- justE <$> interpretExpr cond
+  return $ case cond of
+             (C.CBinary C.CLeOp  _ _ _) -> cond'
+             (C.CBinary C.CGrOp  _ _ _) -> cond'
+             (C.CBinary C.CLeqOp _ _ _) -> cond'
+             (C.CBinary C.CGeqOp _ _ _) -> cond'
+             (C.CBinary C.CEqOp  _ _ _) -> cond'
+             (C.CBinary C.CNeqOp _ _ _) -> cond'
+             _ -> A.Binary A.NotEq cond' (A.IntLit 0)
 
 -- | Make ATS function.
 makeFunc :: String -> AArgs -> Maybe AExpr -> Maybe AType -> St.State IEnv ADecl
@@ -219,8 +240,8 @@ makeLoop nameBase (Left initA) cond incr stat = do
   let loopName = nameBase -- xxx Should be unique function name
   let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
   incr' <- mapM interpretExpr incr
-  let body = A.Let dummyPos
-        (A.ATS $ decls ++ fmap (makeVal patVoid) (maybeToList incr')) (Just callLoop)
+  let incr'' = fmap catPreJustPost incr'
+  let body = A.Let dummyPos (A.ATS $ decls ++ fromMaybe [] incr'') (Just callLoop)
   cond' <- makeCond $ fromJust cond
   let ifte = A.If cond' body (Just $ iEnvDeclVarsTupleEx vars)
   let args = iEnvDeclVarsArgs vars
@@ -228,7 +249,8 @@ makeLoop nameBase (Left initA) cond incr stat = do
             (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
   -- Initialize
   initA' <- mapM interpretExpr initA
-  let initA'' = fmap (makeVal patVoid) (maybeToList initA')
+  let initA'' = fmap justE initA'
+  let initA''' = fmap (makeVal patVoid) (maybeToList initA'')
   -- Call the recursion function
   let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (prefixI n,t)) vars
   let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
@@ -236,29 +258,33 @@ makeLoop nameBase (Left initA) cond incr stat = do
   let reAssign = (\n -> makeVal patVoid $ A.Binary A.Mutate
                         (A.NamedVal $ A.Unqualified n)
                         (A.NamedVal $ A.Unqualified $ prefixI n)) <$> fmap fst vars
-  return $ [func] ++ initA'' ++ [callPat] ++ reAssign
+  return $ [func] ++ initA''' ++ [callPat] ++ reAssign
 
--- | Convert C expression to ATS expression.
-interpretExpr :: C.CExpr -> St.State IEnv AExpr
+-- | Convert C expression to ATS expression with preDecls and postDecls.
+interpretExpr :: C.CExpr -> St.State IEnv ([ADecl], AExpr, [ADecl])
 interpretExpr (C.CConst c) = case c of
-  C.CIntConst int _ -> return $ A.IntLit $ fromInteger $ C.getCInteger int
-  C.CCharConst (C.CChar char _) _ -> return $ A.CharLit char
+  C.CIntConst int _ -> return ([], A.IntLit $ fromInteger $ C.getCInteger int, [])
+  C.CCharConst (C.CChar char _) _ -> return ([], A.CharLit char, [])
   _ -> traceShow c undefined
 interpretExpr (C.CVar ident _) = do
   let name = applyRenames ident
   iEnvRecordUsedVar name
-  return $ A.NamedVal $ A.Unqualified name
+  return ([], A.NamedVal $ A.Unqualified name, [])
+interpretExpr (C.CUnary op expr _) =
+  unop op expr
 interpretExpr (C.CBinary op lhs rhs _) = do
-  lhs' <- interpretExpr lhs
-  rhs' <- interpretExpr rhs
-  binop op lhs' rhs'
+  lhs' <- justE <$> interpretExpr lhs
+  rhs' <- justE <$> interpretExpr rhs
+  b <- binop op lhs' rhs'
+  return ([], b, [])
 interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) = do
-  expr1' <- interpretExpr expr1
-  expr2' <- interpretExpr expr2
-  return $ A.Binary A.Mutate expr1' expr2'
+  expr1' <- justE <$> interpretExpr expr1
+  expr2' <- justE <$> interpretExpr expr2
+  return ([], A.Binary A.Mutate expr1' expr2', [])
 interpretExpr (C.CCall (C.CVar ident _) args _) = do
   args' <- mapM interpretExpr args
-  return $ makeCall (applyRenames ident) args'
+  let args'' = fmap justE args'
+  return ([], makeCall (applyRenames ident) args'', [])
 interpretExpr expr =
   traceShow expr undefined
 
@@ -284,7 +310,7 @@ interpretDeclarations (C.CDecl specs declrs _) =
                      , A._varExpr2 = Nothing
                      }
     cInit :: C.CInit -> St.State IEnv AExpr
-    cInit (C.CInitExpr expr _) = interpretExpr expr
+    cInit (C.CInitExpr expr _) = justE <$> interpretExpr expr
 interpretDeclarations cDecl =
   traceShow cDecl undefined
 
@@ -307,7 +333,7 @@ interpretBlockItemExp bItem =
 -- | Convert C statement to ATS declaration.
 interpretStatementDecl :: C.CStat -> St.State IEnv [ADecl]
 interpretStatementDecl (C.CExpr (Just expr) _) = do
-  expr' <- interpretExpr expr
+  expr' <- justE <$> interpretExpr expr
   return [makeVal patVoid expr']
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
@@ -339,9 +365,9 @@ interpretStatementExp (C.CCompound [] items _) = do
     pickReturn (i@(C.CBlockStmt C.CReturn{}):_) = Just i
     pickReturn (i:is) = pickReturn is
 interpretStatementExp (C.CReturn (Just expr) _) =
-  interpretExpr expr
+  justE <$> interpretExpr expr
 interpretStatementExp (C.CExpr (Just expr) _) =
-  interpretExpr expr
+  justE <$> interpretExpr expr
 interpretStatementExp (C.CIf cond sthen selse _) = do
   cond' <- makeCond cond
   sthen' <- interpretStatementExp sthen
