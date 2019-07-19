@@ -122,7 +122,7 @@ The idiomaticca translator is inspired by Jamey Sharp's [Corrode](https://github
 
 [AGPL-3](./COPYING) or later.
 
-Copyright (c) 2019 Metasepi Team.
+Copyright (c) 2019 Metasepi team.
 
 ## FAQ
 
@@ -134,4 +134,4 @@ Example: If you translate your C code published under BSD license, your translat
 
 ### Are there another option to apply a license other than AGPL-3?
 
-Yes. You can apply your own license to your translated ATS code by purchasing idiomaticca. Please contact Metasepi Team <metasepi@gmail.com>.
+Yes. You can apply your own license to your translated ATS code by purchasing idiomaticca. Please contact Metasepi team <metasepi@gmail.com>.
