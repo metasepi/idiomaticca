@@ -367,13 +367,13 @@ interpretStatementCaseArms caseE (C.CCompound [] items _) =
     toArm :: [C.CBlockItem] -> (APat, ALamT, AExpr)
     toArm items = traceShow (toCaseStats [] items) undefined
     toCaseStats :: [C.CExpr] -> [C.CBlockItem] -> ([C.CExpr], [C.CBlockItem])
-    toCaseStats exprs ((C.CBlockStmt (C.CCase expr stat _)):items) =
+    toCaseStats exprs (C.CBlockStmt (C.CCase expr stat _):items) =
       toCaseStats (exprs ++ [expr]) (C.CBlockStmt stat:items)
     toCaseStats exprs items = (exprs, items)
     splitBreak :: [C.CBlockItem] -> [[C.CBlockItem]]
     splitBreak items =
       let (stats, res) = break isBreak items
-      in [stats] ++ if null res then [] else splitBreak (tail res)
+      in stats : if null res then [] else splitBreak (tail res)
     isBreak :: C.CBlockItem -> Bool
     isBreak (C.CBlockStmt (C.CBreak _)) = True
     isBreak _ = False
@@ -397,7 +397,7 @@ interpretStatementDecl (C.CCompound [] items _) =
 interpretStatementDecl (C.CSwitch expr stat _) = do
   expr' <- justE <$> interpretExpr expr
   arms <- interpretStatementCaseArms expr' stat
-  return $ [makeVal patVoid $ A.Case dummyPos A.None expr' arms]
+  return [makeVal patVoid $ A.Case dummyPos A.None expr' arms]
 interpretStatementDecl stat =
   traceShow stat undefined
 
