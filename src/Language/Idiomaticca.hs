@@ -366,21 +366,32 @@ interpretStatementCaseArms caseE (C.CCompound [] items _) =
     toArms items = mapM toArm (filter (not . null) $ splitBreak items)
     toArm :: [C.CBlockItem] -> St.State IEnv (APat, ALamT, AExpr)
     toArm items = do
-      traceShow items undefined
       let (cExprs, cItems) = toCaseStats [] items
       aExprs <- mapM interpretExpr cExprs
-      aItems <- mapM interpretBlockItemExp cItems
-      traceShow (aExprs, aItems) undefined
+      let aExprs' = fmap justE aExprs
+      aItem <- itemsExpr cItems
+      return $ case length aExprs' of
+        0 -> (A.PName (A.Unqualified "_") [], A.Plain dummyPos, aItem)
+        1 -> (A.PLiteral $ head aExprs', A.Plain dummyPos, aItem)
+        _ -> (A.Guarded dummyPos (logicOrAll aExprs') (A.PName (A.Unqualified "_") []),
+              A.Plain dummyPos, aItem)
+    itemsExpr :: [C.CBlockItem] -> St.State IEnv AExpr
+    itemsExpr items = do
+      aItems <- mapM interpretBlockItemExp items -- xxx May use interpretStatementDecl
+      return $ head aItems -- xxx Use all of them
+    logicOrAll :: [AExpr] -> AExpr
+    logicOrAll [x] = A.Binary A.Equal caseE x
+    logicOrAll (x:xs) = A.Binary A.Equal caseE (A.Binary A.LogicalOr x (logicOrAll xs))
     toCaseStats :: [C.CExpr] -> [C.CBlockItem] -> ([C.CExpr], [C.CBlockItem])
     toCaseStats exprs (C.CBlockStmt (C.CCase expr stat _):items) =
       toCaseStats (exprs ++ [expr]) (C.CBlockStmt stat:items)
     toCaseStats exprs (C.CBlockStmt (C.CDefault stat _):items) =
-      toCaseStats ([]) (C.CBlockStmt stat:items)
+      toCaseStats [] (C.CBlockStmt stat:items)
     toCaseStats exprs items = (exprs, items)
     splitBreak :: [C.CBlockItem] -> [[C.CBlockItem]]
     splitBreak items =
       let (stats, res) = break isBreak items
-      in stats : if null res then [] else splitBreak (tail res)
+      in if null res then [] else splitBreak (tail res) ++ [stats]
     isBreak :: C.CBlockItem -> Bool
     isBreak (C.CBlockStmt (C.CBreak _)) = True
     isBreak _ = False
