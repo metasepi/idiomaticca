@@ -376,9 +376,13 @@ interpretStatementCaseArms caseE (C.CCompound [] items _) =
         _ -> (A.Guarded dummyPos (logicOrAll aExprs') (A.PName (A.Unqualified "_") []),
               A.Plain dummyPos, aItem)
     itemsExpr :: [C.CBlockItem] -> St.State IEnv AExpr
-    itemsExpr items = do
-      aItems <- mapM interpretBlockItemExp items -- xxx May use interpretStatementDecl
-      return $ head aItems -- xxx Use all of them
+    itemsExpr items =
+      if length items == 1 then do
+        exprs <- mapM interpretBlockItemExp items
+        return $ head exprs
+      else do
+        decls <- mapM interpretBlockItemDecl items
+        return $ A.Let dummyPos (A.ATS $ concat decls) Nothing
     logicOrAll :: [AExpr] -> AExpr
     logicOrAll [x] = A.Binary A.Equal caseE x
     logicOrAll (x:xs) = A.Binary A.Equal caseE (A.Binary A.LogicalOr x (logicOrAll xs))
