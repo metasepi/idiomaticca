@@ -359,13 +359,17 @@ interpretBlockItemExp bItem =
 
 -- | Convert C statement to ATS _arms of Case.
 interpretStatementCaseArms :: AExpr -> C.CStat -> St.State IEnv [(APat, ALamT, AExpr)]
-interpretStatementCaseArms expr (C.CCompound [] items _) =
+interpretStatementCaseArms caseE (C.CCompound [] items _) =
   return $ toArms items
   where
     toArms :: [C.CBlockItem] -> [(APat, ALamT, AExpr)]
     toArms items = fmap toArm (filter (not . null) $ splitBreak items)
     toArm :: [C.CBlockItem] -> (APat, ALamT, AExpr)
-    toArm items = traceShow items undefined
+    toArm items = traceShow (toCaseStats [] items) undefined
+    toCaseStats :: [C.CExpr] -> [C.CBlockItem] -> ([C.CExpr], [C.CBlockItem])
+    toCaseStats exprs ((C.CBlockStmt (C.CCase expr stat _)):items) =
+      toCaseStats (exprs ++ [expr]) (C.CBlockStmt stat:items)
+    toCaseStats exprs items = (exprs, items)
     splitBreak :: [C.CBlockItem] -> [[C.CBlockItem]]
     splitBreak items =
       let (stats, res) = break isBreak items
