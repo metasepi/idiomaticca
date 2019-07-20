@@ -1,4 +1,4 @@
-int for_break() {
+int while_break() {
 	int a = 10, b = 10;
 
 	while(a < 20) {
@@ -13,5 +13,5 @@ int for_break() {
 }
 
 int main() {
-	return for_break() - 16 - 15;
+	return while_break() - 16 - 15;
 }
