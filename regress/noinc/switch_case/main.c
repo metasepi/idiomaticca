@@ -30,9 +30,9 @@ int switch_case(char c) {
 int main() {
 	int num, space, other;
 
-	num = switch_case('0') == 1;
-	space = switch_case(' ') == 2;
-	other = switch_case('Q') == 3;
+	num = switch_case('0');
+	space = switch_case(' ');
+	other = switch_case('Q');
 
-	return !(num && space && other);
+	return num * 100 + space * 10 + other - 123;
 }
