@@ -11,6 +11,7 @@ int switch_case(char c) {
 		ret = 2;
 		break;
 	default:
+		ret = 1;
 		ret = 3;
 		break;
 	}
