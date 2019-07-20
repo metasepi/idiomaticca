@@ -3,6 +3,7 @@ module Main where
 import Data.Version hiding (Version (..))
 import Paths_idiomaticca
 import Options.Applicative
+import Debug.Trace
 import qualified Language.C as C
 import qualified Language.ATS as A
 import Language.Idiomaticca
@@ -49,14 +50,23 @@ main :: IO ()
 main = execParser wrapper >>= run
 
 run :: Command -> IO ()
-run (Trans file) = do
-  Right cAst <- C.parseCFilePre file
-  let atsAst = interpretTranslationUnit cAst
-  putStrLn $ A.printATS atsAst
+run (Trans file) = C.parseCFilePre file >>= printAtsCode
+run (DumpC file) = C.parseCFilePre file >>= printCAst
 run (DumpAts file) = do
   atsSrc <- readFile file
-  let Right atsAst = A.parse atsSrc
-  print atsAst
-run (DumpC file) = do
-  Right cAst <- C.parseCFilePre file
-  print cAst
+  let atsAstE = A.parse atsSrc
+  printAtsAst atsAstE
+
+printAtsCode :: Either C.ParseError C.CTranslUnit -> IO ()
+printAtsCode (Left err) = traceShow err undefined
+printAtsCode (Right cAst) = do
+  let atsAst = interpretTranslationUnit cAst
+  putStrLn $ A.printATS atsAst
+
+printCAst :: Either C.ParseError C.CTranslUnit -> IO ()
+printCAst (Left err) = traceShow err undefined
+printCAst (Right cAst) = print cAst
+
+printAtsAst :: Either A.ATSError (A.ATS A.AlexPosn) -> IO ()
+printAtsAst (Left err) = traceShow err undefined
+printAtsAst (Right atsAst) = print atsAst
