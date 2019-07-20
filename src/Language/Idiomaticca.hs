@@ -24,6 +24,7 @@ type AType = A.Type Pos
 type AArgs = A.Args Pos
 type AArg = A.Arg Pos
 type APat = A.Pattern Pos
+type ALamT = A.LambdaType Pos
 
 justE :: Show a => Show b => ([a], b, [a]) -> b
 justE ([], r, []) = r
@@ -356,6 +357,25 @@ interpretBlockItemExp (C.CBlockStmt statement) =
 interpretBlockItemExp bItem =
   traceShow bItem undefined
 
+-- | Convert C statement to ATS _arms of Case.
+interpretStatementCaseArms :: AExpr -> C.CStat -> St.State IEnv [(APat, ALamT, AExpr)]
+interpretStatementCaseArms expr (C.CCompound [] items _) =
+  return $ toArms items
+  where
+    toArms :: [C.CBlockItem] -> [(APat, ALamT, AExpr)]
+    toArms items = fmap toArm (filter (not . null) $ splitBreak items)
+    toArm :: [C.CBlockItem] -> (APat, ALamT, AExpr)
+    toArm items = traceShow items undefined
+    splitBreak :: [C.CBlockItem] -> [[C.CBlockItem]]
+    splitBreak items =
+      let (stats, res) = break isBreak items
+      in [stats] ++ if null res then [] else splitBreak (tail res)
+    isBreak :: C.CBlockItem -> Bool
+    isBreak (C.CBlockStmt (C.CBreak _)) = True
+    isBreak _ = False
+interpretStatementCaseArms expr stat =
+  traceShow (expr, stat) undefined
+
 -- | Convert C statement to ATS declaration.
 interpretStatementDecl :: C.CStat -> St.State IEnv [ADecl]
 interpretStatementDecl (C.CExpr (Just expr) _) = do
@@ -370,6 +390,10 @@ interpretStatementDecl (C.CFor initA cond incr stat _) =
   makeLoop "loop_for" initA cond incr stat
 interpretStatementDecl (C.CCompound [] items _) =
   concat <$> mapM interpretBlockItemDecl items
+interpretStatementDecl (C.CSwitch expr stat _) = do
+  expr' <- justE <$> interpretExpr expr
+  arms <- interpretStatementCaseArms expr' stat
+  return $ [makeVal patVoid $ A.Case dummyPos A.None expr' arms]
 interpretStatementDecl stat =
   traceShow stat undefined
 
