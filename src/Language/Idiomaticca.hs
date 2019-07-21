@@ -407,8 +407,13 @@ interpretStatementCaseArms expr stat =
 -- | Convert C statement to ATS declaration.
 interpretStatementDecl :: C.CStat -> St.State IEnv [ADecl]
 interpretStatementDecl (C.CExpr (Just expr) _) = do
-  expr' <- justE <$> interpretExpr expr
-  return [makeVal patVoid expr']
+  (pre, just, post) <- interpretExpr expr
+  return $ if isBinaryMutate just then pre ++ [makeVal patVoid just] ++ post
+           else pre ++ post
+  where
+    isBinaryMutate :: AExpr -> Bool -- xxx Should be defined at global?
+    isBinaryMutate (A.Binary A.Mutate _ _) = True
+    isBinaryMutate _ = False
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
   return [makeVal patVoid cIf']
@@ -422,6 +427,8 @@ interpretStatementDecl (C.CSwitch expr stat _) = do
   expr' <- justE <$> interpretExpr expr
   arms <- interpretStatementCaseArms expr' stat
   return [makeVal patVoid $ A.Case dummyPos A.None expr' arms]
+interpretStatementDecl (C.CBreak _) =
+  return [A.Comment "(* CBreak *)"] -- xxx Should find me at makeing `A.If`?
 interpretStatementDecl stat =
   traceShow stat undefined
 
