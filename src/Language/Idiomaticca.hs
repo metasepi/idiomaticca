@@ -26,10 +26,12 @@ type AArg = A.Arg Pos
 type APat = A.Pattern Pos
 type ALamT = A.LambdaType Pos
 
+-- | Pickup just expr fom `([ADecl], AExpr, [ADecl])`.
 justE :: Show a => Show b => ([a], b, [a]) -> b
 justE ([], r, []) = r
 justE e = traceShow e undefined
 
+-- | Concat `([ADecl], AExpr, [ADecl])` to ATS declarations.
 catPreJustPost :: ([ADecl], AExpr, [ADecl]) -> [ADecl]
 catPreJustPost (preD, justE, postD) =
   case justE of
