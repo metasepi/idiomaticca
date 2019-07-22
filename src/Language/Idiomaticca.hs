@@ -259,6 +259,12 @@ makeCall fname args =
          , A.callArgs = reverse args
          }
 
+makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr
+makeLoopBody body post call =
+  -- xxx Should support break and continue
+  let ret = A.Let dummyPos (A.ATS $ body ++ post) (Just call)
+  in traceShow ret ret
+
 -- | Make `while` or `for` loop using a recursion function
 makeLoop :: String -> Either (Maybe C.CExpr) C.CDecl -> Maybe C.CExpr -> Maybe C.CExpr -> C.CStat -> St.State IEnv [ADecl]
 makeLoop nameBase (Left initA) cond incr stat = do
@@ -271,7 +277,7 @@ makeLoop nameBase (Left initA) cond incr stat = do
   let incr'' = fmap catPreJustPost incr'
   (preCondE, justCondE, postCondE) <- makeCond $ fromJust cond
   -- xxx Should use preCondE
-  let body = A.Let dummyPos (A.ATS $ postCondE ++ decls ++ fromMaybe [] incr'') (Just callLoop)
+  let body = makeLoopBody (postCondE ++ decls) (fromMaybe [] incr'') callLoop
   let ifte = A.If justCondE body (Just $ iEnvDeclVarsTupleEx vars)
   let args = iEnvDeclVarsArgs vars
   func <- makeFunc loopName args (Just ifte)
