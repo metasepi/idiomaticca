@@ -26,6 +26,10 @@ type AArg = A.Arg Pos
 type APat = A.Pattern Pos
 type ALamT = A.LambdaType Pos
 
+-- | Comments should be removed in ATS AST
+commentTodoBreak :: ADecl
+commentTodoBreak = A.Comment "(* _I9A_ CBreak *)"
+
 -- | Pickup just expr fom `([ADecl], AExpr, [ADecl])`.
 justE :: Show a => Show b => ([a], b, [a]) -> b
 justE ([], r, []) = r
@@ -259,11 +263,20 @@ makeCall fname args =
          , A.callArgs = reverse args
          }
 
-makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr
-makeLoopBody body post call =
-  -- xxx Should support break and continue
-  let ret = A.Let dummyPos (A.ATS $ body ++ post) (Just call)
-  in traceShow ret ret
+makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> AExpr
+makeLoopBody body post call ret =
+  -- xxx Should support continue
+  removeBreak body post call ret []
+  where
+    removeBreak :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> [ADecl] -> AExpr
+    -- xxx Following should be more abstract
+    removeBreak (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS [commentTodoBreak]) Nothing) Nothing)):decls) post call ret cont
+      = A.Let dummyPos (A.ATS cont)
+          (Just (A.If cond ret (Just $ A.Let dummyPos (A.ATS decls) (Just call))))
+    removeBreak (x:xs) post call ret cont =
+      removeBreak xs post call ret (cont ++ [x])
+    removeBreak [] post call ret cont =
+      A.Let dummyPos (A.ATS $ cont ++ post) (Just call)
 
 -- | Make `while` or `for` loop using a recursion function
 makeLoop :: String -> Either (Maybe C.CExpr) C.CDecl -> Maybe C.CExpr -> Maybe C.CExpr -> C.CStat -> St.State IEnv [ADecl]
@@ -277,7 +290,7 @@ makeLoop nameBase (Left initA) cond incr stat = do
   let incr'' = fmap catPreJustPost incr'
   (preCondE, justCondE, postCondE) <- makeCond $ fromJust cond
   -- xxx Should use preCondE
-  let body = makeLoopBody (postCondE ++ decls) (fromMaybe [] incr'') callLoop
+  let body = makeLoopBody (postCondE ++ decls) (fromMaybe [] incr'') callLoop (iEnvDeclVarsTupleEx vars)
   let ifte = A.If justCondE body (Just $ iEnvDeclVarsTupleEx vars)
   let args = iEnvDeclVarsArgs vars
   func <- makeFunc loopName args (Just ifte)
@@ -434,7 +447,7 @@ interpretStatementDecl (C.CSwitch expr stat _) = do
   arms <- interpretStatementCaseArms expr' stat
   return [makeVal patVoid $ A.Case dummyPos A.None expr' arms]
 interpretStatementDecl (C.CBreak _) =
-  return [A.Comment "(* CBreak *)"] -- xxx Should find me at makeing `A.If`?
+  return [commentTodoBreak]
 interpretStatementDecl stat =
   traceShow stat undefined
 
