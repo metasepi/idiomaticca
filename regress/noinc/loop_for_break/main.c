@@ -9,9 +9,9 @@ int for_break() {
 		b++;
 	}
 
-	return a + b;
+	return a + b + i;
 }
 
 int main() {
-	return for_break() - 16 - 15;
+	return for_break() - 16 - 15 - 5;
 }
