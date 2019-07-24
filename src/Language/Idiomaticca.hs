@@ -275,7 +275,7 @@ makeLoopBody body post call ret =
           thenE = if null letDecls' then ret
                   else A.Let dummyPos (A.ATS letDecls') (Just ret)
       in A.Let dummyPos (A.ATS cont)
-         (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS decls) (Just call))))
+         (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS $ decls ++ post) (Just call))))
     removeBreak (x:xs) post call ret cont =
       removeBreak xs post call ret (cont ++ [x])
     removeBreak [] post call ret cont =
