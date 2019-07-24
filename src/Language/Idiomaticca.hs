@@ -27,9 +27,9 @@ type APat = A.Pattern Pos
 type ALamT = A.LambdaType Pos
 
 -- | Comments should be removed in ATS AST
-commentTodoBreak, commentTodoCont :: ADecl
-commentTodoBreak = A.Comment "(* _I9A_ CBreak *)"
-commentTodoCont = A.Comment "(* _I9A_ CCont *)"
+todoBreak, todoCont :: ADecl
+todoBreak = A.Comment "(* _I9A_ CBreak *)"
+todoCont = A.Comment "(* _I9A_ CCont *)"
 
 -- | Pickup just expr fom `([ADecl], AExpr, [ADecl])`.
 justE :: Show a => Show b => ([a], b, [a]) -> b
@@ -271,15 +271,15 @@ makeLoopBody body post call ret =
   where
     removeBC :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> [ADecl] -> AExpr
     -- `break` is found
-    removeBC (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem commentTodoBreak letDecls =
-      let letDecls' = takeWhile (/= commentTodoBreak) letDecls
+    removeBC (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem todoBreak letDecls =
+      let letDecls' = takeWhile (/= todoBreak) letDecls
           thenE = if null letDecls' then ret
                   else A.Let dummyPos (A.ATS letDecls') (Just ret)
       in A.Let dummyPos (A.ATS cont)
          (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS $ decls ++ post) (Just call))))
     -- `continue` is found
-    removeBC x@(A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem commentTodoCont letDecls =
-      let letDecls' = takeWhile (/= commentTodoCont) letDecls
+    removeBC x@(A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem todoCont letDecls =
+      let letDecls' = takeWhile (/= todoCont) letDecls
           thenE = if null letDecls' then ret
                   else A.Let dummyPos (A.ATS letDecls') (Just call)
       in A.Let dummyPos (A.ATS cont)
@@ -458,9 +458,9 @@ interpretStatementDecl (C.CSwitch expr stat _) = do
   arms <- interpretStatementCaseArms expr' stat
   return [makeVal patVoid $ A.Case dummyPos A.None expr' arms]
 interpretStatementDecl (C.CBreak _) =
-  return [commentTodoBreak]
+  return [todoBreak]
 interpretStatementDecl (C.CCont _) =
-  return [commentTodoCont]
+  return [todoCont]
 interpretStatementDecl stat =
   traceShow stat undefined
 
