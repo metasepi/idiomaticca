@@ -27,8 +27,9 @@ type APat = A.Pattern Pos
 type ALamT = A.LambdaType Pos
 
 -- | Comments should be removed in ATS AST
-commentTodoBreak :: ADecl
+commentTodoBreak, commentTodoCont :: ADecl
 commentTodoBreak = A.Comment "(* _I9A_ CBreak *)"
+commentTodoCont = A.Comment "(* _I9A_ CCont *)"
 
 -- | Pickup just expr fom `([ADecl], AExpr, [ADecl])`.
 justE :: Show a => Show b => ([a], b, [a]) -> b
@@ -267,18 +268,26 @@ makeCall fname args =
 makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> AExpr
 makeLoopBody body post call ret =
   -- xxx Should support continue
-  removeBreak body post call ret []
+  removeBC body post call ret []
   where
-    removeBreak :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> [ADecl] -> AExpr
-    removeBreak (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem commentTodoBreak letDecls =
+    removeBC :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> [ADecl] -> AExpr
+    -- `break` is found
+    removeBC (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem commentTodoBreak letDecls =
       let letDecls' = takeWhile (/= commentTodoBreak) letDecls
           thenE = if null letDecls' then ret
                   else A.Let dummyPos (A.ATS letDecls') (Just ret)
       in A.Let dummyPos (A.ATS cont)
          (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS $ decls ++ post) (Just call))))
-    removeBreak (x:xs) post call ret cont =
-      removeBreak xs post call ret (cont ++ [x])
-    removeBreak [] post call ret cont =
+    -- `continue` is found
+    removeBC x@(A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem commentTodoCont letDecls =
+      let letDecls' = takeWhile (/= commentTodoCont) letDecls
+          thenE = if null letDecls' then ret
+                  else A.Let dummyPos (A.ATS letDecls') (Just call)
+      in A.Let dummyPos (A.ATS cont)
+         (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS $ decls ++ post) (Just call))))
+    removeBC (x:xs) post call ret cont =
+      removeBC xs post call ret (cont ++ [x])
+    removeBC [] post call ret cont =
       A.Let dummyPos (A.ATS $ cont ++ post) (Just call)
 
 -- | Make `while` or `for` loop using a recursion function
@@ -451,6 +460,8 @@ interpretStatementDecl (C.CSwitch expr stat _) = do
   return [makeVal patVoid $ A.Case dummyPos A.None expr' arms]
 interpretStatementDecl (C.CBreak _) =
   return [commentTodoBreak]
+interpretStatementDecl (C.CCont _) =
+  return [commentTodoCont]
 interpretStatementDecl stat =
   traceShow stat undefined
 
