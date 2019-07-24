@@ -1,4 +1,4 @@
-int while_break() {
+int while_continue() {
 	int a = 10, b = 10;
 
 	while(a < 20) {
@@ -14,5 +14,5 @@ int while_break() {
 }
 
 int main() {
-	return while_break() - 21 - 15;
+	return while_continue() - 21 - 15;
 }
