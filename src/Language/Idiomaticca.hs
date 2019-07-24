@@ -274,14 +274,13 @@ makeLoopBody body post call ret =
     removeBC (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem todoBreak letDecls =
       let letDecls' = takeWhile (/= todoBreak) letDecls
           thenE = if null letDecls' then ret
-                  else A.Let dummyPos (A.ATS letDecls') (Just ret)
+                  else A.Let dummyPos (A.ATS $ letDecls' ++ post) (Just ret)
       in A.Let dummyPos (A.ATS cont)
          (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS $ decls ++ post) (Just call))))
     -- `continue` is found
     removeBC x@(A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem todoCont letDecls =
       let letDecls' = takeWhile (/= todoCont) letDecls
-          thenE = if null letDecls' then ret
-                  else A.Let dummyPos (A.ATS letDecls') (Just call)
+          thenE = A.Let dummyPos (A.ATS $ letDecls' ++ post) (Just call)
       in A.Let dummyPos (A.ATS cont)
          (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS $ decls ++ post) (Just call))))
     removeBC (x:xs) post call ret cont =
