@@ -267,7 +267,6 @@ makeCall fname args =
 -- | Make loop body without `break` and `continue` comments
 makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> AExpr
 makeLoopBody body post call ret =
-  -- xxx Should support continue
   removeBC body post call ret []
   where
     removeBC :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> [ADecl] -> AExpr
