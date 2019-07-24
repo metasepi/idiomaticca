@@ -4,6 +4,7 @@ int while_break() {
 	while(a < 20) {
 		a++;
 		if (a > 15) {
+			a++;
 			break;
 		}
 		b++;
@@ -13,5 +14,5 @@ int while_break() {
 }
 
 int main() {
-	return while_break() - 16 - 15;
+	return while_break() - 17 - 15;
 }
