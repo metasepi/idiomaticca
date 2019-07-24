@@ -263,16 +263,19 @@ makeCall fname args =
          , A.callArgs = reverse args
          }
 
+-- | Make loop body without `break` and `continue` comments
 makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> AExpr
 makeLoopBody body post call ret =
   -- xxx Should support continue
   removeBreak body post call ret []
   where
     removeBreak :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> [ADecl] -> AExpr
-    -- xxx Following should be more abstract
-    removeBreak (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS [commentTodoBreak]) Nothing) Nothing)):decls) post call ret cont
-      = A.Let dummyPos (A.ATS cont)
-          (Just (A.If cond ret (Just $ A.Let dummyPos (A.ATS decls) (Just call))))
+    removeBreak (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem commentTodoBreak letDecls =
+      let letDecls' = takeWhile (/= commentTodoBreak) letDecls
+          thenE = if null letDecls' then ret
+                  else A.Let dummyPos (A.ATS letDecls') (Just ret)
+      in A.Let dummyPos (A.ATS cont)
+         (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS decls) (Just call))))
     removeBreak (x:xs) post call ret cont =
       removeBreak xs post call ret (cont ++ [x])
     removeBreak [] post call ret cont =
