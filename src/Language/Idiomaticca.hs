@@ -147,6 +147,12 @@ unop op expr = do
     C.CPostDecOp ->
       ([], expr',
        [makeVal patVoid $ A.Binary A.Mutate expr' $ A.Binary A.Sub expr' (A.IntLit 1)])
+    C.CAdrOp ->
+      ([], A.AddrAt dummyPos expr', [])
+    C.CIndOp ->
+      ([], A.Unary A.Deref expr', [])
+    op ->
+      traceShow op undefined
 
 -- | Convert C binary operator to ATS expression.
 binop :: C.CBinaryOp -> AExpr -> AExpr -> St.State IEnv AExpr
@@ -271,14 +277,14 @@ makeLoopBody body post call ret =
   where
     removeBC :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> [ADecl] -> AExpr
     -- `break` is found
-    removeBC (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem todoBreak letDecls =
+    removeBC (A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | todoBreak `elem` letDecls =
       let letDecls' = takeWhile (/= todoBreak) letDecls
           thenE = if null letDecls' then ret
                   else A.Let dummyPos (A.ATS $ letDecls' ++ post) (Just ret)
       in A.Let dummyPos (A.ATS cont)
          (Just (A.If cond thenE (Just $ A.Let dummyPos (A.ATS $ decls ++ post) (Just call))))
     -- `continue` is found
-    removeBC x@(A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | elem todoCont letDecls =
+    removeBC x@(A.Val _ _ _ (Just (A.If cond (A.Let _ (A.ATS letDecls) Nothing) Nothing)):decls) post call ret cont | todoCont `elem` letDecls =
       let letDecls' = takeWhile (/= todoCont) letDecls
           thenE = A.Let dummyPos (A.ATS $ letDecls' ++ post) (Just call)
       in A.Let dummyPos (A.ATS cont)
@@ -348,9 +354,9 @@ interpretExpr expr =
 
 -- | Convert C declaration to ATS declarations. C can multiple-define vars.
 interpretDeclarations :: C.CDecl -> St.State IEnv [ADecl]
-interpretDeclarations (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived] _ _ _), _, _)] _) = do
+interpretDeclarations (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived@C.CFunDeclr{}] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
-  args <- interpretCDerivedDeclr derived
+  args <- interpretCDerivedDeclrArgs derived
   func <- makeFunc fname args Nothing (Just $ baseTypeOf specs)
   return [func]
 interpretDeclarations (C.CDecl specs declrs _) =
@@ -367,6 +373,14 @@ interpretDeclarations (C.CDecl specs declrs _) =
                      , A._varExpr1 = initi'
                      , A._varExpr2 = Nothing
                      }
+    go (Just (C.CDeclr (Just ident) [C.CPtrDeclr _ _] Nothing [] _), Nothing, _) = do
+      let name = applyRenames ident
+      return $ A.Var { A.varT = Just $ A.Named $ A.Unqualified "ptr"
+                     , A.varPat = A.UniversalPattern dummyPos name [] Nothing
+                     , A._varExpr1 = Nothing
+                     , A._varExpr2 = Nothing
+                     }
+    go x = traceShow x undefined
     cInit :: C.CInit -> St.State IEnv AExpr
     cInit (C.CInitExpr expr _) = justE <$> interpretExpr expr
 interpretDeclarations cDecl =
@@ -494,8 +508,8 @@ interpretStatementExp stat =
   traceShow stat undefined
 
 -- | Convert C derived declarator to ATS `Args`, and keep the vars in `IEnv`.
-interpretCDerivedDeclr :: C.CDerivedDeclr -> St.State IEnv AArgs
-interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) = do
+interpretCDerivedDeclrArgs :: C.CDerivedDeclr -> St.State IEnv AArgs
+interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
   args <- mapM go decls
   return $ Just args
   where
@@ -507,14 +521,14 @@ interpretCDerivedDeclr (C.CFunDeclr (Right (decls, _)) _ _) = do
       return $ A.Arg (A.Both name aType)
     go (C.CDecl specs [] _) =
       return $ A.Arg (A.Second (baseTypeOf specs))
-interpretCDerivedDeclr dDeclr =
+interpretCDerivedDeclrArgs dDeclr =
   traceShow dDeclr undefined
 
 -- | Convert C function definition to ATS declaration.
 interpretFunction :: C.CFunDef -> St.State IEnv ADecl
 interpretFunction (C.CFunDef specs (C.CDeclr (Just ident) [derived] _ _ _) _ body _) = do
   let fname = applyRenames ident
-  args <- interpretCDerivedDeclr derived
+  args <- interpretCDerivedDeclrArgs derived
   body' <- interpretStatementExp body
   s <- St.get
   if fname `Set.member` iEnvDeclFuns s then
