@@ -179,6 +179,7 @@ applyRenames ident = case C.identToString ident of
 singleSpec :: C.CTypeSpec -> AType
 singleSpec (C.CIntType _) = A.Named $ A.Unqualified "int"
 singleSpec (C.CCharType _) = A.Named $ A.Unqualified "char"
+singleSpec (C.CVoidType _) = A.Named $ A.Unqualified "void"
 singleSpec cType =
   traceShow cType undefined
 
