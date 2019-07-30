@@ -463,12 +463,12 @@ interpretStatementCaseArms expr stat =
 interpretStatementDecl :: C.CStat -> St.State IEnv [ADecl]
 interpretStatementDecl (C.CExpr (Just expr) _) = do
   (pre, just, post) <- interpretExpr expr
-  return $ if isBinaryMutate just then pre ++ [makeVal patVoid just] ++ post
-           else pre ++ post
+  return $ pre ++ insertJust just ++ post
   where
-    isBinaryMutate :: AExpr -> Bool -- xxx Should be defined at global?
-    isBinaryMutate (A.Binary A.Mutate _ _) = True
-    isBinaryMutate _ = False
+    insertJust :: AExpr -> [ADecl]
+    insertJust e@(A.Binary A.Mutate _ _) = [makeVal patVoid e]
+    insertJust e@(A.Call _ _ _ _ _) = [makeVal patVoid e] -- xxx Should `val _ =`
+    insertJust x = []
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
   return [makeVal patVoid cIf']
