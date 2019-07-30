@@ -26,6 +26,7 @@ type AArgs = A.Args Pos
 type AArg = A.Arg Pos
 type APat = A.Pattern Pos
 type ALamT = A.LambdaType Pos
+type AUni = A.Universal Pos
 
 -- | Comments should be removed in ATS AST
 todoBreak, todoCont :: ADecl
@@ -238,8 +239,8 @@ makeArgs args body =
     nullArgs _ = False
 
 -- | Make ATS function.
-makeFunc :: String -> AArgs -> Maybe AExpr -> Maybe AType -> St.State IEnv ADecl
-makeFunc fname args body ret = do
+makeFunc :: String -> (AArgs, [AUni]) -> Maybe AExpr -> Maybe AType -> St.State IEnv ADecl
+makeFunc fname (args, unis) body ret = do
   iEnvRecordFun fname
   -- Introduce `var` on args
   let body' = makeArgs args body
@@ -247,7 +248,7 @@ makeFunc fname args body ret = do
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
                   , A.preUniversals = []
-                  , A.universals = []
+                  , A.universals = unis -- xxx Should be simplify
                   , A.args = fmap reverse args
                   , A.returnType = ret
                   , A.termetric = Nothing
@@ -255,8 +256,8 @@ makeFunc fname args body ret = do
                   })
 
 -- | Implement ATS function.
-makeImpl :: String -> AArgs -> AExpr -> St.State IEnv ADecl
-makeImpl fname args body = do
+makeImpl :: String -> (AArgs, [AUni]) -> AExpr -> St.State IEnv ADecl
+makeImpl fname (args, unis) body = do
   -- Introduce `var` on args
   let (Just body') = makeArgs args (Just body)
   return A.Impl { A.implArgs = Nothing
@@ -319,7 +320,7 @@ makeLoop nameBase (Left initA) cond incr stat = do
   let body = makeLoopBody (postCondE ++ decls) (fromMaybe [] incr'') callLoop (iEnvDeclVarsTupleEx vars)
   let ifte = A.If justCondE body (Just $ iEnvDeclVarsTupleEx vars)
   let args = iEnvDeclVarsArgs vars
-  func <- makeFunc loopName args (Just ifte)
+  func <- makeFunc loopName (args, []) (Just ifte)
             (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
   -- Initialize
   initA' <- mapM interpretExpr initA
@@ -519,19 +520,19 @@ interpretStatementExp stat =
   traceShow stat undefined
 
 -- | Convert C derived declarator to ATS `Args`, and keep the vars in `IEnv`.
-interpretCDerivedDeclrArgs :: C.CDerivedDeclr -> St.State IEnv AArgs
+interpretCDerivedDeclrArgs :: C.CDerivedDeclr -> St.State IEnv (AArgs, [AUni])
 interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
-  (_, args) <- foldM go (1, []) decls
-  return $ Just $ sortA [] [] args
+  (_, args, unis) <- foldM go (1, [], []) decls
+  return (Just $ sortA [] [] args, unis)
   where
-    go :: (Int, [AArg]) -> C.CDecl -> St.State IEnv (Int, [AArg])
-    go (n, as) (C.CDecl specs [(Just (C.CDeclr (Just ident) derived _ _ _), _, _)] _) = do
+    go :: (Int, [AArg], [AUni]) -> C.CDecl -> St.State IEnv (Int, [AArg], [AUni])
+    go (n, as, us) (C.CDecl specs [(Just (C.CDeclr (Just ident) derived _ _ _), _, _)] _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
-      let addr = "l" ++ show n
       iEnvRecordDeclUsedVar name aType
       case derived of
         [C.CPtrDeclr _ _] ->
+          let addr = "l" ++ show n in
           return (n + 1,
                    (A.PrfArg [A.Arg
                                (A.Both (prefixP name)
@@ -540,10 +541,13 @@ interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
                      A.Arg (A.Both name
                              (A.Dependent { A._typeCall = A.Unqualified "ptr"
                                           , A._typeCallArgs = [A.Named $ A.Unqualified addr]
-                                          }))) : as)
-        _ -> return (n, A.Arg (A.Both name aType) : as)
-    go (n, as) (C.CDecl specs [] _) =
-      return (n, A.Arg (A.Second (baseTypeOf specs)) : as)
+                                          }))) : as,
+                   us ++ [A.Universal {A.bound = [addr], A.typeU = Just A.Addr, A.prop = []}])
+        _ -> return (n, A.Arg (A.Both name aType) : as, us)
+    go (n, as, us) (C.CDecl specs [] _) =
+      return (n, A.Arg (A.Second (baseTypeOf specs)) : as, us)
+    -- xxx Should fix language-ats?
+    -- xxx Following is reversed?
     sortA :: [AArg] -> [AArg] -> [AArg] -> [AArg]
     sortA pArgs args (A.PrfArg px x:xs) = sortA (pArgs ++ px) (args ++ [x]) xs
     sortA pArgs args (x:xs) = sortA pArgs (args ++ [x]) xs
