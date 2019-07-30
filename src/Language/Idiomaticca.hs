@@ -521,7 +521,7 @@ interpretStatementExp stat =
 interpretCDerivedDeclrArgs :: C.CDerivedDeclr -> St.State IEnv AArgs
 interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
   args <- mapM go decls
-  return $ Just args
+  return $ Just $ sortA [] [] args
   where
     go :: C.CDecl -> St.State IEnv AArg
     go (C.CDecl specs [(Just (C.CDeclr (Just ident) derived _ _ _), _, _)] _) = do
@@ -537,11 +537,16 @@ interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
                   (A.Dependent { A._typeCall = A.Unqualified "ptr"
                                , A._typeCallArgs = [A.Named $ A.Unqualified "l"]
                                }))
-          -- xxx Should sort `PrfArg`s
           -- xxx Should count up as `l1`,`l2`,... for addr
         _ -> return $ A.Arg (A.Both name aType)
     go (C.CDecl specs [] _) =
       return $ A.Arg (A.Second (baseTypeOf specs))
+    sortA :: [AArg] -> [AArg] -> [AArg] -> [AArg]
+    sortA pArgs args (A.PrfArg px x:xs) = sortA (pArgs ++ px) (args ++ [x]) xs
+    sortA pArgs args (x:xs) = sortA pArgs (args ++ [x]) xs
+    sortA pArgs args [] = case length pArgs of
+      0 -> args
+      _ -> A.PrfArg pArgs (head args) : tail args
 interpretCDerivedDeclrArgs dDeclr =
   traceShow dDeclr undefined
 
