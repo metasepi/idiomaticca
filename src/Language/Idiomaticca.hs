@@ -47,6 +47,10 @@ catPreJustPost (preD, justE, postD) =
 prefixI :: String -> String
 prefixI name = "i9a_" ++ name
 
+-- | Prefix name for proof
+prefixP :: String -> String
+prefixP name = prefixI $ "pf_" ++ name
+
 -- | State to keep defined Functions and Vars.
 data IEnv = IEnv { iEnvDeclFuns :: Set.Set String -- declared function names
                  , iEnvDeclVars :: [(String, AType)] -- defined var names and types
@@ -123,7 +127,11 @@ atsArgsVars args =
                Just args' -> fmap go args'
   where
     go :: AArg -> ADecl
-    go (A.Arg (A.Both name aType)) =
+    go (A.Arg (A.Both name aType)) = v name aType
+    go (A.PrfArg _ (A.Arg (A.Both name aType))) = v name aType
+    go x = traceShow x undefined
+    v :: String -> AType -> ADecl
+    v name aType =
       A.Var { A.varT = Just aType
             , A.varPat = A.UniversalPattern dummyPos name [] Nothing
             , A._varExpr1 = Just $ A.NamedVal $ A.Unqualified name
@@ -355,6 +363,7 @@ interpretExpr expr =
 
 -- | Convert C declaration to ATS declarations. C can multiple-define vars.
 interpretDeclarations :: C.CDecl -> St.State IEnv [ADecl]
+-- xxx Finding `CDeclr` is duplicated
 interpretDeclarations (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived@C.CFunDeclr{}] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
   args <- interpretCDerivedDeclrArgs derived
@@ -515,11 +524,22 @@ interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
   return $ Just args
   where
     go :: C.CDecl -> St.State IEnv AArg
-    go (C.CDecl specs [(Just (C.CDeclr (Just ident) _ _ _ _), _, _)] _) = do
+    go (C.CDecl specs [(Just (C.CDeclr (Just ident) derived _ _ _), _, _)] _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
       iEnvRecordDeclUsedVar name aType
-      return $ A.Arg (A.Both name aType)
+      case derived of
+        [C.CPtrDeclr _ _] -> return $
+          A.PrfArg [A.Arg (A.Both (prefixP name)
+                     (A.Unconsumed (A.AtExpr dummyPos aType
+                                     (A.StaticVal (A.Unqualified "l")))))] $
+          A.Arg (A.Both name
+                  (A.Dependent { A._typeCall = A.Unqualified "ptr"
+                               , A._typeCallArgs = [A.Named $ A.Unqualified "l"]
+                               }))
+          -- xxx Should sort `PrfArg`s
+          -- xxx Should count up as `l1`,`l2`,... for addr
+        _ -> return $ A.Arg (A.Both name aType)
     go (C.CDecl specs [] _) =
       return $ A.Arg (A.Second (baseTypeOf specs))
 interpretCDerivedDeclrArgs dDeclr =
