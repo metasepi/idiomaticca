@@ -2,6 +2,7 @@
 .stack-work/
 a.out
 idiomaticca.cabal
+main_dats.c
 regress/*/*/main.dats
 regress/*/*/main_dats.c
 regress/*/*/test_prog
