@@ -56,6 +56,7 @@ prefixP name = prefixI $ "pf_" ++ name
 -- | State to keep defined Functions and Vars.
 data IEnv = IEnv { iEnvDeclFuns :: Set.Set String -- declared function names
                  , iEnvDeclVars :: [(String, AType)] -- defined var names and types
+                 , iEnvDynViews :: [(String, AExpr)] -- views of dynamics
                  , iEnvUsedVars :: Set.Set String -- used var names
                  }
   deriving (Show)
@@ -64,6 +65,7 @@ data IEnv = IEnv { iEnvDeclFuns :: Set.Set String -- declared function names
 defaultIEnv :: IEnv
 defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
                    , iEnvDeclVars = []
+                   , iEnvDynViews = []
                    , iEnvUsedVars = Set.empty
                    }
 
@@ -107,9 +109,11 @@ iEnvRecordDeclUsedVar name aType = do
   iEnvRecordUsedVar name
 
 -- | Clear {Decl,Used} vars in `IEnv`.
-iEnvClearDeclUsedVar :: St.State IEnv ()
-iEnvClearDeclUsedVar =
-  St.modify $ \s -> s { iEnvDeclVars = [], iEnvUsedVars = Set.empty }
+iEnvClearDVDVUV :: St.State IEnv ()
+iEnvClearDVDVUV =
+  St.modify $ \s -> s { iEnvDeclVars = []
+                      , iEnvDynViews = []
+                      , iEnvUsedVars = Set.empty }
 
 -- | Find used and pre-defined vars for args of recursion function
 usedTypedVars :: [C.CExpr] -> [C.CStat] -> St.State IEnv [(String, AType)]
@@ -277,9 +281,19 @@ makeCall fname args =
   A.Call { A.callName = A.Unqualified fname
          , A.callImplicits = []
          , A.callUniversals = []
-         , A.callProofs = Nothing
+         , A.callProofs = proofArgs args
          , A.callArgs = reverse args
          }
+  where
+    proofArgs :: [AExpr] -> Maybe [AExpr]
+    proofArgs e = let e' = proofArgs' e
+                  in case e' of
+                       [] -> Nothing
+                       _ -> Just e'
+    proofArgs' :: [AExpr] -> [AExpr]
+    proofArgs' (A.AddrAt _ e:xs) = A.ViewAt dummyPos e : proofArgs' xs
+    proofArgs' (_:xs) = proofArgs' xs
+    proofArgs' [] = []
 
 -- | Make loop body without `break` and `continue` comments
 makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> AExpr
@@ -576,10 +590,10 @@ interpretFunction funDef =
 -- | Convert C external C declaration to ATS declaration.
 perDecl :: C.CExtDecl -> St.State IEnv ADecl
 perDecl (C.CFDefExt f) = do
-  iEnvClearDeclUsedVar
+  iEnvClearDVDVUV
   interpretFunction f
 perDecl (C.CDeclExt d) = do
-  iEnvClearDeclUsedVar
+  iEnvClearDVDVUV
   d' <- interpretDeclarations d
   return $ A.Extern dummyPos $ head d'
 perDecl eDecl =
