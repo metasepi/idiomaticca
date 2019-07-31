@@ -290,6 +290,8 @@ makeCall fname args =
                                        e' -> Just e'
     proofArgs' :: [AExpr] -> [AExpr]
     proofArgs' (A.AddrAt _ e:xs) = A.ViewAt dummyPos e : proofArgs' xs
+    -- xxx Should find a view in iEnvDynViews
+    proofArgs' (A.NamedVal (A.Unqualified v):xs) = proofArgs' xs
     proofArgs' (_:xs) = proofArgs' xs
     proofArgs' [] = []
 
@@ -340,7 +342,7 @@ makeLoop nameBase (Left initA) cond incr stat = do
   let initA''' = fmap (makeVal patVoid) (maybeToList initA'')
   -- Call the recursion function
   let varsPat = iEnvDeclVarsTuplePat $ fmap (\(n,t) -> (prefixI n,t)) vars
-  let callPat = makeVal (Just varsPat) (makeCall loopName $ iEnvDeclVarsCallArgs vars)
+  let callPat = makeVal (Just varsPat) callLoop
   -- Re-assign vars after call the recursion function
   let reAssign = (\n -> makeVal patVoid $ A.Binary A.Mutate
                         (A.NamedVal $ A.Unqualified n)
