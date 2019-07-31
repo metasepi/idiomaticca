@@ -286,10 +286,8 @@ makeCall fname args =
          }
   where
     proofArgs :: [AExpr] -> Maybe [AExpr]
-    proofArgs e = let e' = proofArgs' e
-                  in case e' of
-                       [] -> Nothing
-                       _ -> Just e'
+    proofArgs e = case proofArgs' e of [] -> Nothing
+                                       e' -> Just e'
     proofArgs' :: [AExpr] -> [AExpr]
     proofArgs' (A.AddrAt _ e:xs) = A.ViewAt dummyPos e : proofArgs' xs
     proofArgs' (_:xs) = proofArgs' xs
