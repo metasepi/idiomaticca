@@ -45,52 +45,121 @@ $ which idiomaticca
 
 ## Usage
 
-Start from [a simple example](./regress/noinc/arithmetic_op/):
+Start from [a simple example](./regress/noinc/loop_for/):
 
 ```
-$ cat regress/noinc/arithmetic_op/main.c
+$ cat regress/noinc/loop_for/main.c
+```
+```c
+int sum1(int n) {
+	int i, sum = 0;
+
+	for (i = 1; i <= n; i = i + 1) {
+		sum = sum + i;
+	}
+
+	return sum;
+}
+
+int sum2(int n) {
+	int i, sum = 0;
+
+	for (i = 1; i <= n; i++) {
+		sum = sum + i;
+	}
+
+	return sum;
+}
+
 int main() {
-        return 1 + 2 - 3 * 4 / 4;
+	return sum1(5) - sum2(5);
 }
 ```
 
 Translate the C code into ATS:
 
 ```
-$ idiomaticca trans regress/noinc/arithmetic_op/main.c > main.dats
+$ idiomaticca trans regress/noinc/loop_for/main.c > main.dats
 $ cat main.dats
 ```
 
 ```ats
-(*
- * Copyright (c) 2019 YOUR NAME
- * All rights reserved.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public
- * License along with this program.
- * If not, see <http://www.gnu.org/licenses/>.
- *)
-
 #include "share/atspre_staload.hats"
 
 staload UN = "prelude/SATS/unsafe.sats"
 
-implement main () =
+fun sum1(n : int) : int =
   let
-    
+    var n: int = n
   in
-    1 + 2 - 3 * 4 / 4
+    let
+      var i: int
+      var sum: int = 0
+
+      fun loop_for(i : int, n : int, sum : int) : (int, int, int) =
+        let
+          var i: int = i
+          var n: int = n
+          var sum: int = sum
+        in
+          if i <= n then
+            let
+              val () = sum := sum + i
+              val () = i := i + 1
+            in
+              loop_for(i, n, sum)
+            end
+          else
+            (i, n, sum)
+        end
+
+      val () = i := 1
+      val (i9a_i, i9a_n, i9a_sum) = loop_for(i, n, sum)
+      val () = i := i9a_i
+      val () = n := i9a_n
+      val () = sum := i9a_sum
+    in
+      sum
+    end
   end
+
+fun sum2(n : int) : int =
+  let
+    var n: int = n
+  in
+    let
+      var i: int
+      var sum: int = 0
+
+      fun loop_for(i : int, n : int, sum : int) : (int, int, int) =
+        let
+          var i: int = i
+          var n: int = n
+          var sum: int = sum
+        in
+          if i <= n then
+            let
+              val () = sum := sum + i
+              val () = i := i + 1
+            in
+              loop_for(i, n, sum)
+            end
+          else
+            (i, n, sum)
+        end
+
+      val () = i := 1
+      val (i9a_i, i9a_n, i9a_sum) = loop_for(i, n, sum)
+      val () = i := i9a_i
+      val () = n := i9a_n
+      val () = sum := i9a_sum
+    in
+      sum
+    end
+  end
+
+implement main () =
+  sum1(5) - sum2(5)
 ```
 
 Compile the translated ATS code and run it:
