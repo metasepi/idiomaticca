@@ -105,6 +105,7 @@ iEnvRecordUsedVar name =
 -- | Declare and use the var, and record `IEnv`.
 iEnvRecordDeclUsedVar :: String -> AType -> St.State IEnv ()
 iEnvRecordDeclUsedVar name aType = do
+  -- xxx Should drop old key/value pair on iEnvDeclVars
   St.modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
   iEnvRecordUsedVar name
 
@@ -275,24 +276,29 @@ makeImpl fname (args, unis) body = do
                 }
 
 -- | Make ATS `Call`
-makeCall :: String -> [AExpr] -> AExpr
-makeCall fname args =
-  A.Call { A.callName = A.Unqualified fname
-         , A.callImplicits = []
-         , A.callUniversals = []
-         , A.callProofs = proofArgs args
-         , A.callArgs = reverse args
-         }
+makeCall :: String -> [AExpr] -> St.State IEnv AExpr
+makeCall fname args = do
+  pa <- proofArgs args
+  return $ A.Call { A.callName = A.Unqualified fname
+                  , A.callImplicits = []
+                  , A.callUniversals = []
+                  , A.callProofs = pa
+                  , A.callArgs = reverse args
+                  }
   where
-    proofArgs :: [AExpr] -> Maybe [AExpr]
-    proofArgs e = case proofArgs' e of [] -> Nothing
-                                       e' -> Just e'
-    proofArgs' :: [AExpr] -> [AExpr]
-    proofArgs' (A.AddrAt _ e:xs) = A.ViewAt dummyPos e : proofArgs' xs
+    proofArgs :: [AExpr] -> St.State IEnv (Maybe [AExpr])
+    proofArgs e = do
+      r <- proofArgs' e
+      return $ case r of [] -> Nothing
+                         e' -> Just e'
+    proofArgs' :: [AExpr] -> St.State IEnv [AExpr]
+    proofArgs' (A.AddrAt _ e:xs) = (A.ViewAt dummyPos e :) <$> proofArgs' xs
     -- xxx Should find a view in iEnvDynViews
-    proofArgs' (A.NamedVal (A.Unqualified v):xs) = proofArgs' xs
+    proofArgs' (A.NamedVal (A.Unqualified n):xs) = do
+      s <- St.get
+      ((maybeToList $ lookup n (iEnvDynViews s)) ++) <$> proofArgs' xs
     proofArgs' (_:xs) = proofArgs' xs
-    proofArgs' [] = []
+    proofArgs' [] = return []
 
 -- | Make loop body without `break` and `continue` comments
 makeLoopBody :: [ADecl] -> [ADecl] -> AExpr -> AExpr -> AExpr
@@ -325,7 +331,7 @@ makeLoop nameBase (Left initA) cond incr stat = do
   -- Make recursion function
   decls <- interpretStatementDecl stat
   let loopName = nameBase -- xxx Should be unique function name
-  let callLoop = makeCall loopName $ iEnvDeclVarsCallArgs vars
+  callLoop <- makeCall loopName $ iEnvDeclVarsCallArgs vars
   incr' <- mapM interpretExpr incr
   let incr'' = fmap catPreJustPost incr'
   (preCondE, justCondE, postCondE) <- makeCond $ fromJust cond
@@ -372,7 +378,8 @@ interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) = do
 interpretExpr (C.CCall (C.CVar ident _) args _) = do
   args' <- mapM interpretExpr args
   let args'' = fmap justE args'
-  return ([], makeCall (applyRenames ident) args'', [])
+  just <- makeCall (applyRenames ident) args''
+  return ([], just, [])
 interpretExpr expr =
   traceShow expr undefined
 
@@ -480,7 +487,7 @@ interpretStatementDecl (C.CExpr (Just expr) _) = do
   where
     insertJust :: AExpr -> [ADecl]
     insertJust e@(A.Binary A.Mutate _ _) = [makeVal patVoid e]
-    insertJust e@(A.Call _ _ _ _ _) = [makeVal patVoid e] -- xxx Should `val _ =`
+    insertJust e@A.Call{} = [makeVal patVoid e] -- xxx Should `val _ =`
     insertJust x = []
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
