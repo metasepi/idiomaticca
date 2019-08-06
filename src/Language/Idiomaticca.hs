@@ -109,6 +109,12 @@ iEnvRecordDeclUsedVar name aType = do
   St.modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
   iEnvRecordUsedVar name
 
+-- | Record at-view in `IEnv`.
+iEnvProduceDynView :: String -> AExpr -> St.State IEnv ()
+iEnvProduceDynView name expr = do
+  -- xxx Should consume old key/value pair on iEnvDynViews
+  St.modify $ \s -> s { iEnvDynViews = (name, expr) : iEnvDynViews s }
+
 -- | Clear {Decl,Used} vars in `IEnv`.
 iEnvClearDVDVUV :: St.State IEnv ()
 iEnvClearDVDVUV =
