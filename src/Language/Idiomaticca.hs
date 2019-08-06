@@ -187,8 +187,7 @@ binop op lhs rhs =
 -- | Some names are special in C or special in ATS, or both.
 applyRenames :: C.Ident -> String
 applyRenames ident = case C.identToString ident of
-  name -> name
--- | xxx Get the rename rule.
+  name -> name -- xxx Get the rename rule with keywords of ATS language
 
 singleSpec :: C.CTypeSpec -> AType
 singleSpec (C.CIntType _) = A.Named $ A.Unqualified "int"
@@ -252,7 +251,7 @@ makeFunc fname (args, unis) body ret = do
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
                   , A.preUniversals = []
-                  , A.universals = unis -- xxx Should be simplify
+                  , A.universals = unis -- xxx Should be simplified
                   , A.args = fmap reverse args
                   , A.returnType = ret
                   , A.termetric = Nothing
@@ -379,7 +378,7 @@ interpretExpr expr =
 
 -- | Convert C declaration to ATS declarations. C can multiple-define vars.
 interpretDeclarations :: C.CDecl -> St.State IEnv [ADecl]
--- xxx Finding `CDeclr` is duplicated
+-- xxx Abstract duplicated `CDeclr`
 interpretDeclarations (C.CDecl specs [(Just (C.CDeclr (Just ident) [derived@C.CFunDeclr{}] _ _ _), _, _)] _) = do
   let fname = applyRenames ident
   args <- interpretCDerivedDeclrArgs derived
