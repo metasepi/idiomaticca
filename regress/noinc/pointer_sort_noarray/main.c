@@ -1,5 +1,5 @@
 void sort(int *pa, int *pb, int *pc) {
-	int temp, flag = 1;
+	int temp = 0, flag = 1;
 
 	while (flag == 1) {
 		flag = 0;
