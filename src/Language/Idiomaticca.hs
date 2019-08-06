@@ -552,17 +552,15 @@ interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
       iEnvRecordDeclUsedVar name aType
       case derived of
         [C.CPtrDeclr _ _] ->
-          let addr = "l" ++ show n in
-          return (n + 1,
-                   (A.PrfArg [A.Arg
-                               (A.Both (prefixP name)
-                                 (A.Unconsumed (A.AtExpr dummyPos aType
-                                                 (A.StaticVal (A.Unqualified addr)))))] $
-                     A.Arg (A.Both name
-                             (A.Dependent { A._typeCall = A.Unqualified "ptr"
-                                          , A._typeCallArgs = [A.Named $ A.Unqualified addr]
-                                          }))) : as,
-                   us ++ [A.Universal {A.bound = [addr], A.typeU = Just A.Addr, A.prop = []}])
+          let addr = "l" ++ show n
+              narg = A.PrfArg [A.Arg (A.Both (prefixP name) (A.Unconsumed (A.AtExpr
+                       dummyPos aType (A.StaticVal (A.Unqualified addr)))))] $
+                       A.Arg (A.Both name
+                         (A.Dependent { A._typeCall = A.Unqualified "ptr"
+                                      , A._typeCallArgs = [A.Named $ A.Unqualified addr]
+                                      }))
+              nuni = A.Universal {A.bound = [addr], A.typeU = Just A.Addr, A.prop = []}
+          in return (n + 1, narg:as, us ++ [nuni])
         _ -> return (n, A.Arg (A.Both name aType) : as, us)
     go (n, as, us) (C.CDecl specs [] _) =
       return (n, A.Arg (A.Second (baseTypeOf specs)) : as, us)
