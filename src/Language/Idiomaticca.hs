@@ -579,7 +579,7 @@ interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
     sortA pArgs args (x:xs) = sortA pArgs (args ++ [x]) xs
     sortA pArgs args [] = case length pArgs of
       0 -> args
-      _ -> A.PrfArg pArgs (last args) : init args
+      _ -> A.PrfArg pArgs (last args) : reverse (init args)
 interpretCDerivedDeclrArgs dDeclr =
   traceShow dDeclr undefined
 
