@@ -288,7 +288,7 @@ makeCall fname args = do
   return $ A.Call { A.callName = A.Unqualified fname
                   , A.callImplicits = []
                   , A.callUniversals = []
-                  , A.callProofs = pa
+                  , A.callProofs = fmap reverse pa
                   , A.callArgs = reverse args
                   }
   where
@@ -299,7 +299,6 @@ makeCall fname args = do
                          e' -> Just e'
     proofArgs' :: [AExpr] -> St.State IEnv [AExpr]
     proofArgs' (A.AddrAt _ e:xs) = (A.ViewAt dummyPos e :) <$> proofArgs' xs
-    -- xxx Should find a view in iEnvDynViews
     proofArgs' (A.NamedVal (A.Unqualified n):xs) = do
       s <- St.get
       ((maybeToList $ lookup n (iEnvDynViews s)) ++) <$> proofArgs' xs
@@ -380,6 +379,9 @@ interpretExpr (C.CBinary op lhs rhs _) = do
 interpretExpr (C.CAssign C.CAssignOp expr1 expr2 _) = do
   expr1' <- justE <$> interpretExpr expr1
   expr2' <- justE <$> interpretExpr expr2
+  case (expr1', expr2') of
+    (A.NamedVal (A.Unqualified n), A.AddrAt _ e) -> iEnvProduceDynView n $ A.ViewAt dummyPos e
+    _ -> return ()
   return ([], A.Binary A.Mutate expr1' expr2', [])
 interpretExpr (C.CCall (C.CVar ident _) args _) = do
   args' <- mapM interpretExpr args
