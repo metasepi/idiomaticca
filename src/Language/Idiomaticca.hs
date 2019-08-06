@@ -557,19 +557,21 @@ interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
     go (n, as, us) (C.CDecl specs [(Just (C.CDeclr (Just ident) derived _ _ _), _, _)] _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
-      iEnvRecordDeclUsedVar name aType
       case derived of
-        [C.CPtrDeclr _ _] ->
+        [C.CPtrDeclr _ _] -> do
           let addr = "l" ++ show n
+              pType = A.Dependent { A._typeCall = A.Unqualified "ptr"
+                                  , A._typeCallArgs = [A.Named $ A.Unqualified addr]
+                                  }
               narg = A.PrfArg [A.Arg (A.Both (prefixP name) (A.Unconsumed (A.AtExpr
                        dummyPos aType (A.StaticVal (A.Unqualified addr)))))] $
-                       A.Arg (A.Both name
-                         (A.Dependent { A._typeCall = A.Unqualified "ptr"
-                                      , A._typeCallArgs = [A.Named $ A.Unqualified addr]
-                                      }))
+                       A.Arg (A.Both name pType)
               nuni = A.Universal {A.bound = [addr], A.typeU = Just A.Addr, A.prop = []}
-          in return (n + 1, narg:as, us ++ [nuni])
-        _ -> return (n, A.Arg (A.Both name aType) : as, us)
+          iEnvRecordDeclUsedVar name pType
+          return (n + 1, narg:as, us ++ [nuni])
+        _ -> do
+          iEnvRecordDeclUsedVar name aType
+          return (n, A.Arg (A.Both name aType) : as, us)
     go (n, as, us) (C.CDecl specs [] _) =
       return (n, A.Arg (A.Second (baseTypeOf specs)) : as, us)
     -- xxx Should fix language-ats?
