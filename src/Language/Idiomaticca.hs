@@ -201,7 +201,7 @@ binop op lhs rhs =
                        C.CGrOp  -> A.GreaterThan
                        C.CLeqOp -> A.LessThanEq
                        C.CGeqOp -> A.GreaterThanEq
-                       C.CEqOp  -> A.StaticEq
+                       C.CEqOp  -> A.Equal
                        C.CNeqOp -> A.NotEq
                        o -> traceShow o undefined
   in return $ A.Binary op' lhs rhs
