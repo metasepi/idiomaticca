@@ -55,7 +55,7 @@ prefixP name = prefixI $ "pf_" ++ name
 
 -- | State to keep defined Functions and Vars.
 data IEnv = IEnv { iEnvDeclFuns :: Set.Set String -- declared function names
-                 , iEnvDeclVars :: [(String, AType)] -- defined var names and types
+                 , iEnvDeclVars :: [(String, (AType, Maybe AType))] -- defined var names and (type, view)
                  , iEnvDynViews :: [(String, AExpr)] -- views of dynamics
                  , iEnvUsedVars :: Set.Set String -- used var names
                  }
@@ -70,25 +70,31 @@ defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
                    }
 
 -- | Convert `iEnvDeclVars` to ATS `Args`.
-iEnvDeclVarsArgs :: [(String, AType)] -> AArgs
+iEnvDeclVarsArgs :: [(String, (AType, Maybe AType))] -> (AArgs, [AUni])
 iEnvDeclVarsArgs vars =
-  Just $ fmap go vars
+  (Just $ go [] [] vars, []) -- xxx Need to add AUni
   where
-    go :: (String, AType) -> AArg
-    go (name, aType) = A.Arg $ A.Both name aType
+    -- xxx Following is similar to interpretCDerivedDeclrArgs#sortA
+    go :: [AArg] -> [AArg] -> [(String, (AType, Maybe AType))] -> [AArg]
+    go pArgs args ((name, (aType, aView)):xs) =
+      go (fmap (A.Arg . A.Both (prefixP name)) (maybeToList aView) ++ pArgs)
+           ([A.Arg $ A.Both name aType] ++ args) xs
+    go pArgs args [] = case length pArgs of
+      0 -> reverse args
+      _ -> A.PrfArg pArgs (last args) : reverse (init args)
 
 -- | Convert `iEnvDeclVars` to ATS expression for `callArgs`.
-iEnvDeclVarsCallArgs :: [(String, AType)] -> [AExpr]
+iEnvDeclVarsCallArgs :: [(String, (AType, Maybe AType))] -> [AExpr]
 iEnvDeclVarsCallArgs vars =
   A.NamedVal . A.Unqualified <$> fmap fst vars
 
 -- | Convert `iEnvDeclVars` to ATS `TupleEx`.
-iEnvDeclVarsTupleEx :: [(String, AType)] -> AExpr
+iEnvDeclVarsTupleEx :: [(String, (AType, Maybe AType))] -> AExpr
 iEnvDeclVarsTupleEx vars =
   A.TupleEx dummyPos $ Ne.fromList $ reverse $ iEnvDeclVarsCallArgs vars
 
 -- | Convert `iEnvDeclVars` to ATS data type for pattern.
-iEnvDeclVarsTuplePat :: [(String, AType)] -> APat
+iEnvDeclVarsTuplePat :: [(String, (AType, Maybe AType))] -> APat
 iEnvDeclVarsTuplePat vars =
   A.TuplePattern ((\n -> A.UniversalPattern dummyPos n [] Nothing) <$> fmap fst vars)
 
@@ -103,15 +109,15 @@ iEnvRecordUsedVar name =
   St.modify $ \s -> s { iEnvUsedVars = Set.insert name (iEnvUsedVars s) }
 
 -- | Declare and use the var, and record `IEnv`.
-iEnvRecordDeclUsedVar :: String -> AType -> St.State IEnv ()
-iEnvRecordDeclUsedVar name aType = do
+iEnvRecordDeclUsedVar :: String -> AType -> Maybe AType -> St.State IEnv ()
+iEnvRecordDeclUsedVar name aType aView = do
   -- xxx Should drop old key/value pair on iEnvDeclVars
-  St.modify $ \s -> s { iEnvDeclVars = (name, aType) : iEnvDeclVars s }
+  St.modify $ \s -> s { iEnvDeclVars = (name, (aType, aView)) : iEnvDeclVars s }
   iEnvRecordUsedVar name
 
 -- | Record at-view in `IEnv`.
 iEnvProduceDynView :: String -> AExpr -> St.State IEnv ()
-iEnvProduceDynView name expr = do
+iEnvProduceDynView name expr =
   -- xxx Should consume old key/value pair on iEnvDynViews
   St.modify $ \s -> s { iEnvDynViews = (name, expr) : iEnvDynViews s }
 
@@ -123,7 +129,7 @@ iEnvClearDVDVUV =
                       , iEnvUsedVars = Set.empty }
 
 -- | Find used and pre-defined vars for args of recursion function
-usedTypedVars :: [C.CExpr] -> [C.CStat] -> St.State IEnv [(String, AType)]
+usedTypedVars :: [C.CExpr] -> [C.CStat] -> St.State IEnv [(String, (AType, Maybe AType))]
 usedTypedVars exprs stats = do
   let envExprs = fmap (\e -> St.execState (interpretExpr e) defaultIEnv) exprs
   let envStats = fmap (\s -> St.execState (interpretStatementExp s) defaultIEnv) stats
@@ -343,9 +349,9 @@ makeLoop nameBase (Left initA) cond incr stat = do
   -- xxx Should use preCondE
   let body = makeLoopBody (postCondE ++ decls) (fromMaybe [] incr'') callLoop (iEnvDeclVarsTupleEx vars)
   let ifte = A.If justCondE body (Just $ iEnvDeclVarsTupleEx vars)
-  let args = iEnvDeclVarsArgs vars
-  func <- makeFunc loopName (args, []) (Just ifte)
-            (Just (A.Tuple dummyPos $ reverse $ fmap snd vars))
+  let argsUni = iEnvDeclVarsArgs vars
+  func <- makeFunc loopName argsUni (Just ifte)
+            (Just (A.Tuple dummyPos $ reverse $ fmap (fst . snd) vars))
   -- Initialize
   initA' <- mapM interpretExpr initA
   let initA'' = fmap justE initA'
@@ -406,7 +412,7 @@ interpretDeclarations (C.CDecl specs declrs _) =
     go (Just (C.CDeclr (Just ident) [] Nothing [] _), initi, _) = do
       let name = applyRenames ident
       let aType = baseTypeOf specs
-      iEnvRecordDeclUsedVar name aType
+      iEnvRecordDeclUsedVar name aType Nothing
       initi' <- mapM cInit initi
       return $ A.Var { A.varT = Just aType
                      , A.varPat = A.UniversalPattern dummyPos name [] Nothing
@@ -563,14 +569,15 @@ interpretCDerivedDeclrArgs (C.CFunDeclr (Right (decls, _)) _ _) = do
               pType = A.Dependent { A._typeCall = A.Unqualified "ptr"
                                   , A._typeCallArgs = [A.Named $ A.Unqualified addr]
                                   }
-              narg = A.PrfArg [A.Arg (A.Both (prefixP name) (A.Unconsumed (A.AtExpr
-                       dummyPos aType (A.StaticVal (A.Unqualified addr)))))] $
-                       A.Arg (A.Both name pType)
+              aView = A.Unconsumed (A.AtExpr dummyPos aType (A.StaticVal
+                                                             (A.Unqualified addr)))
+              narg = A.PrfArg [A.Arg (A.Both (prefixP name) aView)] $ A.Arg (A.Both
+                                                                             name pType)
               nuni = A.Universal {A.bound = [addr], A.typeU = Just A.Addr, A.prop = []}
-          iEnvRecordDeclUsedVar name pType
+          iEnvRecordDeclUsedVar name pType $ Just aView
           return (n + 1, narg:as, us ++ [nuni])
         _ -> do
-          iEnvRecordDeclUsedVar name aType
+          iEnvRecordDeclUsedVar name aType Nothing
           return (n, A.Arg (A.Both name aType) : as, us)
     go (n, as, us) (C.CDecl specs [] _) =
       return (n, A.Arg (A.Second (baseTypeOf specs)) : as, us)
