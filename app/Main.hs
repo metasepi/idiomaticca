@@ -5,6 +5,7 @@ import Paths_idiomaticca
 import Options.Applicative
 import Debug.Trace
 import qualified Language.C as C
+import qualified Language.C.System.GCC as C
 import qualified Language.ATS as A
 import Language.Idiomaticca
 
@@ -50,8 +51,8 @@ main :: IO ()
 main = execParser wrapper >>= run
 
 run :: Command -> IO ()
-run (Trans file) = C.parseCFilePre file >>= printAtsCode
-run (DumpC file) = C.parseCFilePre file >>= printCAst
+run (Trans file) = C.parseCFile (C.newGCC "gcc") Nothing [] file >>= printAtsCode
+run (DumpC file) = C.parseCFile (C.newGCC "gcc") Nothing [] file >>= printCAst
 run (DumpAts file) = do
   atsSrc <- readFile file
   let atsAstE = A.parse atsSrc
