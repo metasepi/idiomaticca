@@ -114,6 +114,8 @@ iEnvRecordDeclUsedVar name aType aView = do
   -- xxx Should drop old key/value pair on iEnvDeclVars
   St.modify $ \s -> s { iEnvDeclVars = (name, (aType, aView)) : iEnvDeclVars s }
   iEnvRecordUsedVar name
+  when (isJust aView) $
+    iEnvProduceDynView name (A.NamedVal (A.Unqualified $ prefixP name))
 
 -- | Record at-view in `IEnv`.
 iEnvProduceDynView :: String -> AExpr -> St.State IEnv ()
