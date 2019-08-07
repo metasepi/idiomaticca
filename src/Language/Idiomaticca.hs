@@ -78,7 +78,7 @@ iEnvDeclVarsArgs vars =
     go :: [AArg] -> [AArg] -> [(String, (AType, Maybe AType))] -> [AArg]
     go pArgs args ((name, (aType, aView)):xs) =
       go (fmap (A.Arg . A.Both (prefixP name)) (maybeToList aView) ++ pArgs)
-           ([A.Arg $ A.Both name aType] ++ args) xs
+           ((A.Arg $ A.Both name aType) : args) xs
     go pArgs args [] = case length pArgs of
       0 -> reverse args
       _ -> A.PrfArg pArgs (last args) : reverse (init args)
