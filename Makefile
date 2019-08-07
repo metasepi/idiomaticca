@@ -23,7 +23,7 @@ test: all
 
 clean:
 	stack clean
-	rm -f idiomaticca.cabal
+	rm -f idiomaticca.cabal a.out main_dats.c
 	$(foreach i,$(SUBDIRS),$(MAKE) -C $i $@ &&) true
 
 .PHONY: all setup install doc hlint test clean
