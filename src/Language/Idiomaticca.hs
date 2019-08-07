@@ -72,16 +72,23 @@ defaultIEnv = IEnv { iEnvDeclFuns = Set.singleton "main"
 -- | Convert `iEnvDeclVars` to ATS `Args`.
 iEnvDeclVarsArgs :: [(String, (AType, Maybe AType))] -> (AArgs, [AUni])
 iEnvDeclVarsArgs vars =
-  (Just $ go [] [] vars, []) -- xxx Need to add AUni
+  (Just $ getA [] [] vars, getU vars)
   where
     -- xxx Following is similar to interpretCDerivedDeclrArgs#sortA
-    go :: [AArg] -> [AArg] -> [(String, (AType, Maybe AType))] -> [AArg]
-    go pArgs args ((name, (aType, aView)):xs) =
-      go (fmap (A.Arg . A.Both (prefixP name)) (maybeToList aView) ++ pArgs)
-           ((A.Arg $ A.Both name aType) : args) xs
-    go pArgs args [] = case length pArgs of
+    getA :: [AArg] -> [AArg] -> [(String, (AType, Maybe AType))] -> [AArg]
+    getA pArgs args ((name, (aType, aView)):xs) =
+      getA (fmap (A.Arg . A.Both (prefixP name)) (maybeToList aView) ++ pArgs)
+        ((A.Arg $ A.Both name aType) : args) xs
+    getA pArgs args [] = case length pArgs of
       0 -> reverse args
       _ -> A.PrfArg pArgs (last args) : reverse (init args)
+    getU :: [(String, (AType, Maybe AType))] -> [AUni]
+    getU vs = catMaybes . fmap getU' . fmap (fst . snd) $ vs
+    getU' :: AType -> Maybe AUni
+    getU' (A.Dependent { A._typeCall = A.Unqualified "ptr"
+                       , A._typeCallArgs = [A.Named (A.Unqualified addr)]}) =
+      Just $ A.Universal {A.bound = [addr], A.typeU = Just A.Addr, A.prop = []}
+    getU' _ = Nothing
 
 -- | Convert `iEnvDeclVars` to ATS expression for `callArgs`.
 iEnvDeclVarsCallArgs :: [(String, (AType, Maybe AType))] -> [AExpr]
