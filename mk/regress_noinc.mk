@@ -10,6 +10,6 @@ test: all
 	./test_prog
 
 clean:
-	rm -f main.dats *_dats.c *.o test_prog
+	rm -f main.dats *_dats.c *.o test_prog a.out
 
 .PHONY: all test clean
