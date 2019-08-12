@@ -379,6 +379,7 @@ interpretExpr :: C.CExpr -> St.State IEnv ([ADecl], AExpr, [ADecl])
 interpretExpr (C.CConst c) = case c of
   C.CIntConst int _ -> return ([], A.IntLit $ fromInteger $ C.getCInteger int, [])
   C.CCharConst (C.CChar char _) _ -> return ([], A.CharLit char, [])
+  C.CStrConst str _ -> return ([], A.StringLit $ "\"" ++ C.getCString str ++ "\"", [])
   _ -> traceShow c undefined
 interpretExpr (C.CVar ident _) = do
   let name = applyRenames ident
