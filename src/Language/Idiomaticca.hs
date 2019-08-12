@@ -221,6 +221,7 @@ singleSpec cType =
 -- | Convert C declaration specifiers and qualifiers to ATS type.
 baseTypeOf :: [C.CDeclSpec] -> AType
 baseTypeOf (C.CStorageSpec _:ss) = baseTypeOf ss
+baseTypeOf (C.CTypeQual (C.CConstQual _):ss) = baseTypeOf ss
 baseTypeOf [C.CTypeSpec spec] = singleSpec spec
 baseTypeOf specs =
   traceShow specs undefined
