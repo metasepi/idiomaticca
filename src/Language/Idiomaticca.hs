@@ -270,6 +270,9 @@ makeFunc fname (args, unis) body ret = do
   iEnvRecordFun fname
   -- Introduce `var` on args
   let body' = makeArgs args body
+      body'' = case body' of
+        Nothing -> Just $ A.StringLit ("\"" ++ "mac#" ++ fname ++ "\"")
+        _ -> body'
   return $ A.Func dummyPos
     (A.Fun A.PreF { A.fname = A.Unqualified fname
                   , A.sig = Just ""
@@ -278,7 +281,7 @@ makeFunc fname (args, unis) body ret = do
                   , A.args = fmap reverse args
                   , A.returnType = ret
                   , A.termetric = Nothing
-                  , A._expression = body'
+                  , A._expression = body''
                   })
 
 -- | Implement ATS function.
