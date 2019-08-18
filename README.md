@@ -197,10 +197,6 @@ Copyright (c) 2019 Metasepi team.
 
 ### What license will be applied to my ATS code translated by idiomaticca?
 
-AGPL-3 with your copyright should be applied to your ATS code.
+You can apply your own license to your ATS code.
 
-Example: If you translate your C code published under BSD license, your translated ATS code should be published under AGPL-3.
-
-### Are there another option to apply a license other than AGPL-3?
-
-Yes. You can apply your own license to your translated ATS code by purchasing idiomaticca. Please contact Metasepi team <metasepi@gmail.com>.
+Example: If you translate your C code published under BSD license, you can publish your translated ATS code under BSD license.
