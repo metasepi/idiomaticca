@@ -8,6 +8,7 @@ import qualified Language.C as C
 import qualified Language.C.System.GCC as C
 import qualified Language.ATS as A
 import Language.Idiomaticca
+import Language.Idiomaticca.TypeUsage
 
 wrapper :: ParserInfo Command
 wrapper = info (helper <*> versionInfo <*> command')
@@ -51,22 +52,16 @@ main :: IO ()
 main = execParser wrapper >>= run
 
 run :: Command -> IO ()
-run (Trans file) = C.parseCFile (C.newGCC "gcc") Nothing [] file >>= printAtsCode
-run (DumpC file) = C.parseCFile (C.newGCC "gcc") Nothing [] file >>= printCAst
-run (DumpAts file) = do
-  atsSrc <- readFile file
-  let atsAstE = A.parse atsSrc
-  printAtsAst atsAstE
+run (DumpAts file) = A.parse <$> readFile file >>= printAtsAst
+run (DumpC file) = C.parseCFile (C.newGCC "gcc") Nothing [] file >>= getCAst >>= print
+run (Trans file) =
+  (interpretTypeUsage . interpretTranslationUnit <$>
+    (C.parseCFile (C.newGCC "gcc") Nothing [] file >>= getCAst))
+    >>= putStrLn . A.printATS
 
-printAtsCode :: Either C.ParseError C.CTranslUnit -> IO ()
-printAtsCode (Left err) = traceShow err undefined
-printAtsCode (Right cAst) = do
-  let atsAst = interpretTranslationUnit cAst
-  putStrLn $ A.printATS atsAst
-
-printCAst :: Either C.ParseError C.CTranslUnit -> IO ()
-printCAst (Left err) = traceShow err undefined
-printCAst (Right cAst) = print cAst
+getCAst :: Either C.ParseError C.CTranslUnit -> IO C.CTranslUnit
+getCAst (Left err) = traceShow err undefined
+getCAst (Right cAst) = return cAst
 
 printAtsAst :: Either A.ATSError (A.ATS A.AlexPosn) -> IO ()
 printAtsAst (Left err) = traceShow err undefined
