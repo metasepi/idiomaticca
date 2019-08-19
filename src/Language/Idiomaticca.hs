@@ -55,8 +55,15 @@ prefixP name = prefixI $ "pf_" ++ name
 
 -- | State to keep defined Functions and Vars.
 data IEnv = IEnv { iEnvDeclFuns :: Set.Set String -- declared function names
-                 , iEnvDeclVars :: [(String, (AType, Maybe AType))] -- defined var names and (type, view)
-                 , iEnvDynViews :: [(String, AExpr)] -- views of dynamics
+                 , iEnvDeclVars :: [(String, (AType, Maybe AType))]
+                   -- defined var names and (type, view)
+                   -- Example: ("pa",(Dependent {_typeCall = Unqualified "ptr",
+                   --           _typeCallArgs = [Named (Unqualified "l1")]},
+                   --           Just (Unconsumed (AtExpr (AlexPn 0 0 0) (Named
+                   --           (Unqualified "int")) (StaticVal (Unqualified "l1"))))))
+                 , iEnvDynViews :: [(String, AExpr)]
+                   -- views of dynamics
+                   -- Example: ("pa",NamedVal (Unqualified "i9a_pf_pa"))
                  , iEnvUsedVars :: Set.Set String -- used var names
                  }
   deriving (Show)
