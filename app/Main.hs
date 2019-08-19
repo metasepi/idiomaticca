@@ -8,7 +8,6 @@ import qualified Language.C as C
 import qualified Language.C.System.GCC as C
 import qualified Language.ATS as A
 import Language.Idiomaticca
-import Language.Idiomaticca.TypeUsage
 
 wrapper :: ParserInfo Command
 wrapper = info (helper <*> versionInfo <*> command')
