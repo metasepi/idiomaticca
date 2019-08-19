@@ -230,6 +230,10 @@ baseTypeOf specs =
 patVoid :: Maybe APat
 patVoid = Just (A.PLiteral (A.VoidLiteral dummyPos))
 
+-- | Wildcard pattern for ATS `Val`.
+patWildcard :: Maybe APat
+patWildcard = Just (A.PName (A.Unqualified "_") [])
+
 -- | Make ATS `Val`.
 makeVal :: Maybe APat -> AExpr -> ADecl
 makeVal pat aExpr = A.Val { A.add = A.None
@@ -515,7 +519,7 @@ interpretStatementDecl (C.CExpr (Just expr) _) = do
   where
     insertJust :: AExpr -> [ADecl]
     insertJust e@(A.Binary A.Mutate _ _) = [makeVal patVoid e]
-    insertJust e@A.Call{} = [makeVal patVoid e] -- xxx Should `val _ =`
+    insertJust e@A.Call{} = [makeVal patWildcard e]
     insertJust x = []
 interpretStatementDecl cIf@C.CIf{} = do
   cIf' <- interpretStatementExp cIf
